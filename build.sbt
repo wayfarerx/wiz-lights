@@ -1,5 +1,5 @@
+ThisBuild / organization := "net.wayfarerx"
 ThisBuild / version := "0.1.0-SNAPSHOT"
-
 ThisBuild / scalaVersion := "3.8.1"
 
 lazy val catsVersion = "2.13.0"
@@ -28,6 +28,7 @@ lazy val api = (project in file("api"))
   .settings(
     name := "wiz-lights-api",
     libraryDependencies ++= Seq(
+      CatsCore,
       Zio,
       ZioStreams
     ),
