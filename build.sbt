@@ -27,8 +27,11 @@ lazy val ZioPrelude = "dev.zio" %% "zio-prelude" % zioPreludeVersion
 lazy val api = (project in file("api"))
   .settings(
     name := "wiz-lights-api",
-    libraryDependencies ++= Seq(),
-    idePackagePrefix := Some("net.wayfarerx.wizlights.api")
+    libraryDependencies ++= Seq(
+      Zio,
+      ZioStreams
+    ),
+    idePackagePrefix := Some("net.wayfarerx.wizlights")
   )
 
 /**
