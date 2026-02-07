@@ -2,7 +2,7 @@ package net.wayfarerx.wizlights.backend
 package network
 
 import cats.data.NonEmptySet
-import io.circe.{Encoder, Json}
+import io.circe.Json
 
 import java.net.InetAddress
 
@@ -21,7 +21,6 @@ object Message:
 
   /**
    * An incoming network message.
-   *
    *
    * @param address The address of the device that sent this message.
    * @param json    The JSON payload in this message.

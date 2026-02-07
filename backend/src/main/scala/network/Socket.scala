@@ -54,8 +54,8 @@ private final class SocketLive private(
       ZIO.foreachDiscard(broadcastAddresses)(address => publisher.offer(Message.Outgoing.Unicast(address, json)))
     case Message.Outgoing.Multicast(addresses, json) =>
       ZIO.foreachDiscard(addresses.toSortedSet)(address => publisher.offer(Message.Outgoing.Unicast(address, json)))
-    case unicast: Message.Outgoing.Unicast =>
-      publisher.offer(unicast).unit
+    case message: Message.Outgoing.Unicast =>
+      publisher.offer(message).unit
 
   /* Subscribe to the messages sent to this socket. */
   override def subscribe: URIO[Scope, UStream[Message.Incoming]] =
@@ -68,24 +68,24 @@ object SocketLive:
 
   /** The layer that provides the socket service. */
   val layer: RLayer[Configuration, Socket] = ZLayer.scoped {
-    for {
+    for
       config <- ZIO.service[Configuration]
       scope <- ZIO.service[Scope]
       publisher <- Queue.unbounded[Message.Outgoing.Unicast]
       subscriptions <- Hub.unbounded[Message.Incoming]
       broadcastAddresses <- ZIO.attemptBlocking {
-        for {
+        for
           interface <- NetworkInterface.getNetworkInterfaces.asScala
           interfaceAddress <- interface.getInterfaceAddresses.asScala
           broadcastAddress <- Option(interfaceAddress.getBroadcast)
-        } yield broadcastAddress
+        yield broadcastAddress
       }.map(_.toSet)
-      handler = Handler()
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
+      handler = Handler()
       channel <- ZIO.acquireRelease(acquireChannel(eventLoopGroup, handler))(releaseChannel)
       _ <- handler.stream.mapZIO(read.tupled).collectSome.foreach(subscriptions.publish).forkIn(scope)
       _ <- ZStream.fromQueue(publisher).foreach(write(channel, config.networkPort, _)).forkIn(scope)
-    } yield SocketLive(publisher, subscriptions, broadcastAddresses)
+    yield SocketLive(publisher, subscriptions, broadcastAddresses)
   }
 
   /**
@@ -174,11 +174,11 @@ object SocketLive:
     lazy val stream: ZStream[Any, Throwable, (InetAddress, ByteBuffer)] = ZStream.async(cb => callback = Some(cb))
 
     /* Forward the datagram to the registered callback. */
-    override def channelRead0(ctx: ChannelHandlerContext, datagram: DatagramPacket): Unit = callback.foreach {
-      val buffer = ByteBuffer.allocate(datagram.content.readableBytes)
-      datagram.content.readBytes(buffer)
+    override def channelRead0(ctx: ChannelHandlerContext, packet: DatagramPacket): Unit = callback.foreach {
+      val buffer = ByteBuffer.allocate(packet.content.readableBytes)
+      packet.content.readBytes(buffer)
       buffer.flip()
-      _(ZIO.succeed(Chunk(datagram.sender.getAddress -> buffer)))
+      _(ZIO.succeed(Chunk(packet.sender.getAddress -> buffer)))
     }
 
     /* Forward the cause to the registered callback. */

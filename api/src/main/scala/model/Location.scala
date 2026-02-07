@@ -45,9 +45,7 @@ object Location:
   private def validName(name: String): Task[String] =
     val trimmed = name.trim
     if trimmed.nonEmpty then ZIO.succeed(trimmed) else
-      ZIO.fail(IllegalArgumentException(
-        "Invalid empty or blank location name."
-      ))
+      ZIO.fail(IllegalArgumentException("Invalid empty or blank location name."))
 
   /**
    * Validates a location MAC address.
@@ -58,6 +56,4 @@ object Location:
   private def validMacAddress(macAddress: String): Task[String] =
     val lower = macAddress.toLowerCase
     if macAddressPattern.matches(lower) then ZIO.succeed(lower) else
-      ZIO.fail(IllegalArgumentException(
-        s"Invalid MAC address: $macAddress."
-      ))
+      ZIO.fail(IllegalArgumentException(s"Invalid MAC address: $macAddress."))
