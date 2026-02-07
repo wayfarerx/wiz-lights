@@ -33,8 +33,8 @@ enum Scene(val id: Int, val name: String):
   /** The Pastel Colors scene. */
   case PastelColors extends Scene(8, "Pastel Colors")
 
-  /** The Wake Up scene. */
-  case WakeUp extends Scene(9, "Wake Up")
+  /** The Wake-Up scene. */
+  case WakeUp extends Scene(9, "Wake-Up")
 
   /** The Bedtime scene. */
   case Bedtime extends Scene(10, "Bedtime")

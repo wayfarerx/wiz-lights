@@ -3,9 +3,8 @@ package service
 
 import model.*
 
-import cats.data.NonEmptyMap
 import zio.stream.UStream
-import zio.{Promise, Scope, UIO, URIO}
+import zio.{Scope, UIO, URIO}
 
 /**
  * A service that interacts with available lights.
@@ -35,7 +34,7 @@ trait Lighting:
    * @param state    The state to set on the light at the specified location.
    * @return A promise to set the state of the specified light.
    */
-  def set(location: Location, state: Light.State): UIO[Promise[Throwable, Light]]
+  def set(location: Location, state: Light.State): UIO[Unit]
 
   /**
    * Sets the state of the lights at the specified locations.
@@ -44,7 +43,7 @@ trait Lighting:
    * @param state     The state to set on the lights at the specified locations.
    * @return A promise to set the state of the specified lights.
    */
-  def set(locations: Locations, state: Light.State): UIO[Promise[Throwable, NonEmptyMap[Location, Light]]]
+  def set(locations: Locations, state: Light.State): UIO[Unit]
 
   /**
    * Subscribes to events from this service.
