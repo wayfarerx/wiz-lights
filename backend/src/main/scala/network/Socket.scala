@@ -1,13 +1,16 @@
-package net.wayfarerx.wizlights.backend
+package net.wayfarerx.wizlights
+package backend
 package network
 
 import io.circe.parser.parse as parseJson
+import io.circe.syntax.*
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
+import protocol.*
 import zio.stream.{UStream, ZStream}
 import zio.{Chunk, Hub, Queue, RLayer, Scope, Task, UIO, URIO, ZIO, ZLayer}
 
@@ -24,16 +27,16 @@ trait Socket:
   /**
    * Publishes a message on this socket.
    *
-   * @param message The message to publish.
+   * @param message The outgoing message to publish.
    */
-  def publish(message: Message.Outgoing): UIO[Unit]
+  def publish(message: Outgoing): UIO[Unit]
 
   /**
    * Subscribes to the messages sent to this socket.
    *
    * @return A subscription to the messages sent to this socket.
    */
-  def subscribe: URIO[Scope, UStream[Message.Incoming]]
+  def subscribe: URIO[Scope, UStream[Incoming]]
 
 /**
  * A live socket implementation on top of Netty.
@@ -43,22 +46,22 @@ trait Socket:
  * @param broadcastAddresses The set of available broadcast addresses.
  */
 private final class SocketLive private(
-  publisher: Queue[Message.Outgoing.Unicast],
-  subscriptions: Hub[Message.Incoming],
+  publisher: Queue[Outgoing.Unicast],
+  subscriptions: Hub[Incoming],
   broadcastAddresses: Set[InetAddress]
 ) extends Socket:
 
   /* Publish a message on this socket. */
-  override def publish(message: Message.Outgoing): UIO[Unit] = message match
-    case Message.Outgoing.Broadcast(json) =>
-      ZIO.foreachDiscard(broadcastAddresses)(address => publisher.offer(Message.Outgoing.Unicast(address, json)))
-    case Message.Outgoing.Multicast(addresses, json) =>
-      ZIO.foreachDiscard(addresses.toSortedSet)(address => publisher.offer(Message.Outgoing.Unicast(address, json)))
-    case message: Message.Outgoing.Unicast =>
+  override def publish(message: Outgoing): UIO[Unit] = message match
+    case Outgoing.Broadcast(request) =>
+      ZIO.foreachDiscard(broadcastAddresses)(address => publisher.offer(Outgoing.Unicast(address, request)))
+    case Outgoing.Multicast(addresses, request) =>
+      ZIO.foreachDiscard(addresses.toSortedSet)(address => publisher.offer(Outgoing.Unicast(address, request)))
+    case message: Outgoing.Unicast =>
       publisher.offer(message).unit
 
   /* Subscribe to the messages sent to this socket. */
-  override def subscribe: URIO[Scope, UStream[Message.Incoming]] =
+  override def subscribe: URIO[Scope, UStream[Incoming]] =
     ZStream.fromHubScoped(subscriptions)
 
 /**
@@ -71,8 +74,8 @@ object SocketLive:
     for
       config <- ZIO.service[Configuration]
       scope <- ZIO.service[Scope]
-      publisher <- Queue.unbounded[Message.Outgoing.Unicast]
-      subscriptions <- Hub.unbounded[Message.Incoming]
+      publisher <- Queue.unbounded[Outgoing.Unicast]
+      subscriptions <- Hub.unbounded[Incoming]
       broadcastAddresses <- ZIO.attemptBlocking {
         for
           interface <- NetworkInterface.getNetworkInterfaces.asScala
@@ -138,11 +141,12 @@ object SocketLive:
    * @param payload The content of the message.
    * @return A new message if one can be read.
    */
-  private def read(address: InetAddress, payload: ByteBuffer): UIO[Option[Message.Incoming]] = {
+  private def read(address: InetAddress, payload: ByteBuffer): UIO[Option[Incoming]] = {
     for {
       text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
       json <- ZIO.fromEither(parseJson(text))
-    } yield Some(Message.Incoming(address, json))
+      response <- ZIO.fromEither(json.as[Response])
+    } yield Some(Incoming(address, response))
   }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
 
   /**
@@ -152,11 +156,11 @@ object SocketLive:
    * @param port    The port to write the message on.
    * @param message The message to write.
    */
-  private def write(channel: Channel, port: Int, message: Message.Outgoing.Unicast): UIO[Unit] =
+  private def write(channel: Channel, port: Int, message: Outgoing.Unicast): UIO[Unit] =
     ZIO.attemptBlocking {
       channel.writeAndFlush(
         DatagramPacket(
-          Unpooled.copiedBuffer(message.json.noSpaces, StandardCharsets.UTF_8),
+          Unpooled.copiedBuffer(message.request.asJson.noSpaces, StandardCharsets.UTF_8),
           InetSocketAddress(message.address, port)
         )
       ).sync()

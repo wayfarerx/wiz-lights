@@ -2,11 +2,12 @@ package net.wayfarerx.wizlights
 package backend
 package main
 
-import net.wayfarerx.wizlights.model.*
-import net.wayfarerx.wizlights.service.*
 import zio.concurrent.ConcurrentMap
 import zio.stream.{UStream, ZStream}
 import zio.{Hub, Scope, UIO, URIO, RLayer, ZIO, ZLayer}
+
+import model.*
+import service.*
 
 /**
  * A live implementation of the lighting service.
