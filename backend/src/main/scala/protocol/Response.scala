@@ -8,10 +8,7 @@ import io.circe.{Decoder, DecodingFailure}
 /**
  * Base type for responses.
  */
-sealed trait Response:
-
-  /** True if the associated request succeeded. */
-  def success: Boolean
+sealed trait Response
 
 /**
  * Definitions associated with responses.
@@ -61,10 +58,7 @@ case class GetPilotResponse(
   b: Option[Int],
   sceneId: Option[Int],
   dimming: Option[Int]
-) extends Response:
-
-  /* Always true. */
-  override def success: Boolean = true
+) extends Response
 
 /**
  * The set pilot response.

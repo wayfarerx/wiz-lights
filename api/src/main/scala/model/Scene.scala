@@ -129,7 +129,7 @@ object Scene:
   private lazy val byId = values.map(s => s.id -> s).toMap
 
   /** The scenes indexed by their names. */
-  private lazy val byName = values.map(s => s.name -> s).toMap
+  private lazy val byName = values.map(s => s.name.toLowerCase -> s).toMap
 
   /**
    * Returns the scene with the specified ID.
@@ -145,4 +145,4 @@ object Scene:
    * @param name The name of the scene to return.
    * @return The scene with the specified name if it exists.
    */
-  def valueBy(name: String): Option[Scene] = byName.get(name)
+  def valueBy(name: String): Option[Scene] = byName.get(name.toLowerCase)
