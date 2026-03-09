@@ -24,7 +24,7 @@ object Location:
   given Order[Location] = Order.fromOrdering
 
   /** A pattern that matches valid mac addresses. */
-  private val macAddressPattern = "[0-9a-f]{12}".r
+  private val MacAddressPattern = "[0-9a-f]{12}".r
 
   /**
    * Creates a new location.
@@ -42,10 +42,10 @@ object Location:
    * @param name The location name to validate.
    * @return The specified name if it is valid.
    */
-  private def validName(name: String): Task[String] =
+  private def validName(name: String) =
     val trimmed = name.trim
-    if trimmed.nonEmpty then ZIO.succeed(trimmed) else
-      ZIO.fail(IllegalArgumentException("Invalid empty or blank location name."))
+    if trimmed.isEmpty then ZIO.fail(IllegalArgumentException("Invalid empty or blank location name."))
+    else ZIO.succeed(trimmed)
 
   /**
    * Validates a location MAC address.
@@ -53,7 +53,8 @@ object Location:
    * @param macAddress The location MAC address to validate.
    * @return The specified MAC address if it is valid.
    */
-  private def validMacAddress(macAddress: String): Task[String] =
-    val lower = macAddress.toLowerCase
-    if macAddressPattern.matches(lower) then ZIO.succeed(lower) else
-      ZIO.fail(IllegalArgumentException(s"Invalid MAC address: $macAddress."))
+  private def validMacAddress(macAddress: String) =
+    val lowerTrimmed = macAddress.toLowerCase.trim
+    if lowerTrimmed.isEmpty then ZIO.fail(IllegalArgumentException("Invalid empty or blank location MAC address."))
+    else if MacAddressPattern.matches(lowerTrimmed) then ZIO.succeed(lowerTrimmed)
+    else ZIO.fail(IllegalArgumentException(s"Malformed location MAC address: $macAddress."))

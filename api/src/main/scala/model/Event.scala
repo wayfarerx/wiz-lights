@@ -19,7 +19,7 @@ object Event:
   case class TurnedOn(light: Light) extends Event
 
   /**
-   * Signals that a light's state was updated somehow.
+   * Signals that a light's state was updated.
    *
    * @param light The information about the light that was updated.
    */

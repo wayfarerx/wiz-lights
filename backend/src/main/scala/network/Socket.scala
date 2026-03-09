@@ -41,24 +41,14 @@ trait Socket:
 /**
  * A live socket implementation on top of Netty.
  *
- * @param publisher          The queue to offer published messages to.
- * @param subscriptions      The hub to get received messages from.
- * @param broadcastAddresses The set of available broadcast addresses.
+ * @param publisher     The queue to offer published messages to.
+ * @param subscriptions The hub to get received messages from.
  */
-private final class SocketLive private(
-  publisher: Queue[Outgoing.Unicast],
-  subscriptions: Hub[Incoming],
-  broadcastAddresses: Set[InetAddress]
-) extends Socket:
+case class SocketLive private(publisher: Queue[Outgoing], subscriptions: Hub[Incoming]) extends Socket:
 
   /* Publish a message on this socket. */
-  override def publish(message: Outgoing): UIO[Unit] = message match
-    case Outgoing.Broadcast(request) =>
-      ZIO.foreachDiscard(broadcastAddresses)(address => publisher.offer(Outgoing.Unicast(address, request)))
-    case Outgoing.Multicast(addresses, request) =>
-      ZIO.foreachDiscard(addresses.toSortedSet)(address => publisher.offer(Outgoing.Unicast(address, request)))
-    case message: Outgoing.Unicast =>
-      publisher.offer(message).unit
+  override def publish(message: Outgoing): UIO[Unit] =
+    publisher.offer(message).unit
 
   /* Subscribe to the messages sent to this socket. */
   override def subscribe: URIO[Scope, UStream[Incoming]] =
@@ -74,7 +64,7 @@ object SocketLive:
     for
       config <- ZIO.service[Configuration]
       scope <- ZIO.service[Scope]
-      publisher <- Queue.unbounded[Outgoing.Unicast]
+      publisher <- Queue.unbounded[Outgoing]
       subscriptions <- Hub.unbounded[Incoming]
       broadcastAddresses <- ZIO.attemptBlocking {
         for
@@ -87,8 +77,8 @@ object SocketLive:
       handler = Handler()
       channel <- ZIO.acquireRelease(acquireChannel(eventLoopGroup, handler))(releaseChannel)
       _ <- handler.stream.mapZIO(read.tupled).collectSome.foreach(subscriptions.publish).forkIn(scope)
-      _ <- ZStream.fromQueue(publisher).foreach(write(channel, config.networkPort, _)).forkIn(scope)
-    yield SocketLive(publisher, subscriptions, broadcastAddresses)
+      _ <- ZStream.fromQueue(publisher).foreach(write(broadcastAddresses, channel, config.networkPort)).forkIn(scope)
+    yield SocketLive(publisher, subscriptions)
   }
 
   /**
@@ -142,29 +132,37 @@ object SocketLive:
    * @return A new message if one can be read.
    */
   private def read(address: InetAddress, payload: ByteBuffer): UIO[Option[Incoming]] = {
-    for {
+    for
       text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
       json <- ZIO.fromEither(parseJson(text))
       response <- ZIO.fromEither(json.as[Response])
-    } yield Some(Incoming(address, response))
+    yield Some(Incoming(address, response))
   }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
 
   /**
    * Writes a message to a channel.
    *
-   * @param channel The channel to write to.
-   * @param port    The port to write the message on.
-   * @param message The message to write.
+   * @param broadcastAddresses The broadcast addresses available to this service.
+   * @param channel            The channel to write to.
+   * @param port               The port to write the message on.
+   * @param message            The message to write.
    */
-  private def write(channel: Channel, port: Int, message: Outgoing.Unicast): UIO[Unit] =
-    ZIO.attemptBlocking {
-      channel.writeAndFlush(
-        DatagramPacket(
-          Unpooled.copiedBuffer(message.request.asJson.noSpaces, StandardCharsets.UTF_8),
-          InetSocketAddress(message.address, port)
-        )
-      ).sync()
-    }.unit.catchAllCause(ZIO.logWarningCause(_))
+  private def write(broadcastAddresses: Set[InetAddress], channel: Channel, port: Int)(message: Outgoing): UIO[Unit] =
+    val addresses = message match
+      case Outgoing.Broadcast(_) => broadcastAddresses
+      case Outgoing.Multicast(addresses, _) => addresses
+      case Outgoing.Unicast(address, _) => Set(address)
+    val payload = message.request.asJson.noSpaces
+    ZIO.foreachDiscard(addresses) { address =>
+      ZIO.attemptBlocking {
+        channel.writeAndFlush(
+          DatagramPacket(
+            Unpooled.copiedBuffer(payload, StandardCharsets.UTF_8),
+            InetSocketAddress(address, port)
+          )
+        ).sync()
+      }
+    }.catchAllCause(ZIO.logWarningCause(_))
 
   /**
    * An inbound UDP packet handler that can target an optional live discovery service.
