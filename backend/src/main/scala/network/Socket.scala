@@ -2,22 +2,26 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
+import java.net.{InetAddress, InetSocketAddress, NetworkInterface}
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+
+import scala.jdk.CollectionConverters.*
+
 import io.circe.parser.parse as parseJson
 import io.circe.syntax.*
+
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import protocol.*
+
 import zio.stream.{UStream, ZStream}
 import zio.{Chunk, Hub, Queue, RLayer, Scope, Task, UIO, URIO, ZIO, ZLayer}
 
-import java.net.{InetAddress, InetSocketAddress, NetworkInterface}
-import java.nio.ByteBuffer
-import java.nio.charset.StandardCharsets
-import scala.jdk.CollectionConverters.*
+import protocol.*
 
 /**
  * A socket for sending and receiving JSON over UDP.

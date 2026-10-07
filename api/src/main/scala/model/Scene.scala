@@ -126,10 +126,10 @@ enum Scene(val id: Int, val name: String):
 object Scene:
 
   /** The scenes indexed by their IDs. */
-  private lazy val byId = values.map(s => s.id -> s).toMap
+  private lazy val byId = values.map(scene => scene.id -> scene).toMap
 
   /** The scenes indexed by their names. */
-  private lazy val byName = values.map(s => s.name.toLowerCase -> s).toMap
+  private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
 
   /**
    * Returns the scene with the specified ID.

@@ -74,7 +74,10 @@ object Color:
    * @return The new color definition if all the color components are valid.
    */
   def make(red: Int, green: Int, blue: Int): Task[Color] = for
-    (r, g, b) <- validated("red", red) validate validated("green", green) validate validated("blue", blue)
+    (r, g, b) <-
+      validComponent("red", red) validate
+        validComponent("green", green) validate
+        validComponent("blue", blue)
   yield Color(r, g, b)
 
   /**
@@ -84,7 +87,7 @@ object Color:
    * @param component The component value to validate.
    * @return The color component if it is valid.
    */
-  private def validated(name: String, component: Int): Task[Int] =
+  private def validComponent(name: String, component: Int): Task[Int] =
     if component >= 0 && component <= 255 then ZIO.succeed(component) else
       ZIO.fail(IllegalArgumentException(
         s"Invalid $name color component: $component. Must be between 0 and 255."

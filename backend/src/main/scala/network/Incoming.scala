@@ -2,9 +2,9 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import protocol.Response
-
 import java.net.InetAddress
+
+import protocol.Response
 
 /**
  * An incoming network response.
