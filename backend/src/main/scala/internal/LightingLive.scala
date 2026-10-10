@@ -2,26 +2,31 @@ package net.wayfarerx.wizlights
 package backend
 package internal
 
+import java.net.InetAddress
+
 import scala.collection.immutable.SortedSet
 
 import cats.data.{NonEmptyList, NonEmptySet}
-
+import net.wayfarerx.wizlights.backend.network.{Incoming, Outgoing, Socket, SocketLive}
+import net.wayfarerx.wizlights.backend.protocol.{GetPilotRequest, GetPilotResponse}
+import net.wayfarerx.wizlights.model.*
+import net.wayfarerx.wizlights.service.Lighting
 import zio.concurrent.ConcurrentMap
 import zio.stream.{UStream, ZStream}
-import zio.{Hub, RLayer, Scope, UIO, URIO, ZIO, ZLayer}
-
-import backend.network.{Socket, SocketLive}
-import model.*
-import service.Lighting
+import zio.{Clock, Duration, Hub, RLayer, Schedule, Scope, UIO, URIO, ZIO, ZLayer}
 
 /**
  * A live implementation of the lighting service.
  *
- * @param devices The collection of devices this service is concerned about.
+ * @param socket  The network socket to use.
+ * @param devices The devices this service is concerned with.
+ * @param routing The routing table to use.
  * @param events  The event publishing hub.
  */
-case class LightingLive private(
+final class LightingLive private(
+  socket: Socket,
   devices: NonEmptyList[Device],
+  routing: ConcurrentMap[InetAddress, Device],
   events: Hub[Light]
 ) extends Lighting:
 
@@ -36,6 +41,16 @@ case class LightingLive private(
 
   /** The index of devices by location. */
   private val byLocation = deviceList.map(d => d.location -> d).toMap
+
+  /** A function that publishes an event. */
+  private val publish: Event => UIO[Unit] = {
+    case Event.InetAddressChanged(location, oldAddress, newAddress) =>
+      newAddress.fold(ZIO.unit) { inetAddress =>
+        byLocation.get(location).fold(ZIO.unit)(routing.put(inetAddress, _))
+      } *> oldAddress.fold(ZIO.unit)(routing.remove) *> ZIO.unit
+    case Event.StatusChanged(location, status) =>
+      events.publish(Light(location, status)) *> ZIO.unit
+  }
 
   /* Return the lights managed by this service. */
   override def lights: UIO[NonEmptySet[Light]] = for
@@ -69,29 +84,37 @@ case class LightingLive private(
     ZStream.fromHubScoped(events)
 
   /**
+   * Broadcasts a "getPilot" request to the entire network.
+   */
+  private def discover: UIO[Unit] =
+    socket.publish(Outgoing.Broadcast(GetPilotRequest))
+
+  /**
+   * Called when a message is received from the network.
+   *
+   * @param message The message that was received.
+   */
+  private def received(message: Incoming): UIO[Unit] = for
+    routed <- routing.get(message.address)
+    device <- routed.fold {
+      message.response match
+        case response: GetPilotResponse =>
+          Address.make(response.mac).map(byMacAddress.get).catchAllCause { cause =>
+            ZIO.logWarningCause(s"Invalid MAC address in getPilot response: ${response.mac}.", cause).map(_ => None)
+          }
+        case _ => ZIO.none
+    }(ZIO.some)
+    _ <- device.fold(ZIO.logInfo(s"Unable to route incoming message: $message.")) {
+      _.received(message, publish).catchAllCause {
+        ZIO.logWarningCause(s"Failed to deliver invalid incoming message: $message.", _)
+      }
+    }
+  yield ()
+
+  /**
    * Visitor for the "lookup" operations.
    */
   private object Lookup extends Lighting.Key.Visitor[Device]:
-
-    /**
-     * Looks up a device with the specified key.
-     *
-     * @tparam Key The type of key to look up.
-     * @param key The key to look up.
-     * @return The device with the specified key.
-     */
-    def apply[Key: Lighting.Key](key: Key): UIO[Option[Device]] =
-      summon[Lighting.Key[Key]].apply(key, this)
-
-    /**
-     * Looks up the devices with the specified keys.
-     *
-     * @tparam Key The type of key to look up.
-     * @param keys The keys to look up.
-     * @return The devices with the specified keys.
-     */
-    def apply[Key: Lighting.Key](keys: Iterable[Key]): UIO[List[Device]] =
-      summon[Lighting.Key[Key]].apply(keys, this)
 
     /* Called when the key type is a name. */
     override def onName(name: String): UIO[Option[Device]] =
@@ -123,19 +146,21 @@ case class LightingLive private(
 object LightingLive:
 
   /** A layer that contains a live lighting service. */
-  val layer: RLayer[Configuration, Lighting] =
+  val layer: RLayer[Clock & Configuration, Lighting] =
     SocketLive.layer >>> ZLayer.scoped {
       for
+        scope <- ZIO.service[Scope]
+        clock <- ZIO.service[Clock]
         config <- ZIO.service[Configuration]
         socket <- ZIO.service[Socket]
-        scope <- ZIO.service[Scope]
-        lights <- ConcurrentMap.make[Location, Light]()
+        devices <- ZIO.foldLeft(config.locations.toSortedSet)(List.empty[Device]) { (s, l) =>
+          Device.make(l, clock).map(_ :: s)
+        }
+        routing <- ConcurrentMap.make[InetAddress, Device]()
         events <- Hub.unbounded[Light]
-        //        service = LightingLive(
-        //          socket,
-        //          
-        //        ) FIXME
+        service = LightingLive(socket, NonEmptyList.fromListUnsafe(devices), routing, events)
         subscription <- socket.subscribe
-      // _ <- subscription.foreach(service.received).forkIn(scope)
-      yield ??? // service
+        _ <- subscription.foreach(service.received).forkIn(scope)
+        _ <- service.discover.repeat(Schedule.fixed(Duration.fromScala(config.discoveryInterval))).forkIn(scope)
+      yield service
     }

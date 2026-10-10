@@ -1,6 +1,8 @@
 package net.wayfarerx.wizlights
 package model
 
+import zio.{Task, ZIO}
+
 /**
  * Scenes a light can perform.
  *
@@ -130,6 +132,15 @@ object Scene:
 
   /** The scenes indexed by their names. */
   private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
+
+  /**
+   * Returns the scene with the specified ID.
+   *
+   * @param id The ID of the scene to return.
+   * @return The scene with the specified ID if it exists.
+   */
+  def make(id: Int): Task[Scene] =
+    byId.get(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene ID: $id.")))(ZIO.succeed(_))
 
   /**
    * Returns the scene with the specified ID.

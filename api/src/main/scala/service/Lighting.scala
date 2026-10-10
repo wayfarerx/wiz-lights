@@ -150,6 +150,26 @@ object Lighting:
     trait Visitor[T]:
 
       /**
+       * Applies this visitor to the specified key.
+       *
+       * @tparam Key The type of key apply.
+       * @param key The key to apply.
+       * @return The result of applying this visitor to the specified key.
+       */
+      final def apply[Key: Lighting.Key](key: Key): UIO[Option[T]] =
+        summon[Lighting.Key[Key]].apply(key, this)
+
+      /**
+       * Applies this visitor to the specified keys.
+       *
+       * @tparam Key The type of key apply.
+       * @param keys The keys to apply.
+       * @return The result of applying this visitor to the specified keys.
+       */
+      final def apply[Key: Lighting.Key](keys: Iterable[Key]): UIO[List[T]] =
+        summon[Lighting.Key[Key]].apply(keys, this)
+
+      /**
        * Called when the key type is a name.
        *
        * @param name The name to visit.

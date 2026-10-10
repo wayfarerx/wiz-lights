@@ -10,22 +10,22 @@ import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 import cats.data.{NonEmptyList, NonEmptySet}
-
+import net.wayfarerx.wizlights.model.{Address, Location}
 import zio.{Task, UIO, ZIO}
-
-import model.{Address, Location}
 
 
 /**
  * The configuration properties for the backend.
  *
- * @param locations     The locations the backend can interact with.
- * @param networkPort   The network port to communicate on.
- * @param retryBackoffs The durations to wait between retrying outgoing messages.
+ * @param locations         The locations the backend can interact with.
+ * @param networkPort       The network port to communicate on.
+ * @param discoveryInterval The frequency of broadcast discovery attempts.
+ * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  */
 case class Configuration private(
   locations: NonEmptySet[Location],
   networkPort: Int,
+  discoveryInterval: FiniteDuration,
   retryBackoffs: List[FiniteDuration]
 )
 
@@ -37,6 +37,9 @@ object Configuration:
   /** The default network port to communicate on. */
   val DefaultNetworkPort: Int = 38899
 
+  /** The default frequency of broadcast discovery attempts. */
+  val DefaultDiscoveryInterval: FiniteDuration = 5.seconds
+
   /** The default durations to wait between retrying outgoing messages. */
   val DefaultRetryBackoffs: List[FiniteDuration] = 100.milliseconds :: 150.milliseconds :: 225.milliseconds :: Nil
 
@@ -46,49 +49,101 @@ object Configuration:
   /**
    * Creates a new backend configuration.
    *
-   * @param locations     The locations the backend can interact with.
-   * @param networkPort   The network port to communicate on.
-   * @param retryBackoffs The durations to wait between retrying outgoing messages.
+   * @param locations         The locations the backend can interact with.
+   * @param networkPort       The network port to communicate on.
+   * @param discoveryInterval The frequency of broadcast discovery attempts.
+   * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @return A new backend configuration.
    */
   def make(
     locations: NonEmptySet[Location],
     networkPort: Int = DefaultNetworkPort,
+    discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs
   ): Task[Configuration] =
-    validateLocations(locations) validate {
-      if networkPort >= 0 && networkPort <= 65535 then ZIO.succeed(()) else
-        ZIO.fail(IllegalArgumentException(s"Invalid network port: $networkPort."))
-    } map (_ => Configuration(locations, networkPort, retryBackoffs.toList))
+    validLocations(locations) validate
+      validNetworkPort(networkPort) validate
+      validDiscoveryInterval(discoveryInterval) validate
+      validRetryBackoffs(retryBackoffs) map
+      (_ => Configuration(locations, networkPort, discoveryInterval, retryBackoffs.toList))
 
   /**
    * Validates that a set of locations contains only unique names and MAC addresses.
    *
    * @param locations The location set to validate.
    */
-  private def validateLocations(locations: NonEmptySet[Location]): Task[Unit] =
+  private def validLocations(locations: NonEmptySet[Location]): Task[Unit] =
     val locationList = locations.toNonEmptyList.toList
-    val nameList = locationList.map(_.name)
-    val macAddressList = locationList.map(_.macAddress)
-    val nameValidation =
-      if nameList.distinct.sizeCompare(nameList) == 0 then ZIO.succeed(()) else
-        ZIO.fail(IllegalArgumentException("Duplicate location names are not allowed."))
-    val macAddressValidation =
-      if macAddressList.distinct.sizeCompare(macAddressList) == 0 then ZIO.succeed(()) else
-        ZIO.fail(IllegalArgumentException("Duplicate location MAC addresses are not allowed."))
-    nameValidation validate macAddressValidation map (_ => ())
+    validLocationNames(locationList.map(_.name)) validate
+      validLocationAddresses(locationList.map(_.macAddress)) map
+      (_ => ())
+
+  /**
+   * Validates that a list of location names is unique.
+   *
+   * @param names Thw list of location names that must be unique.
+   */
+  private def validLocationNames(names: List[String]): Task[Unit] =
+    if names.distinct.sizeCompare(names) == 0 then ZIO.unit else
+      ZIO.fail(IllegalArgumentException("Duplicate location names are not allowed."))
+
+  /**
+   * Validates that a list of location MAC addressed is unique.
+   *
+   * @param macAddresses Thw list of location MAC addressed that must be unique.
+   */
+  private def validLocationAddresses(macAddresses: List[Address]): Task[Unit] =
+    if macAddresses.distinct.sizeCompare(macAddresses) == 0 then ZIO.unit else
+      ZIO.fail(IllegalArgumentException("Duplicate location MAC addresses are not allowed."))
+
+  /**
+   * Validates that the network port is a valid IP port.
+   *
+   * @param networkPort The network port to validate.
+   */
+  private def validNetworkPort(networkPort: Int): Task[Unit] =
+    if networkPort >= 0 && networkPort <= 65535 then ZIO.unit else
+      ZIO.fail(IllegalArgumentException(s"Invalid network port: $networkPort."))
+
+  /**
+   * Validates that the discovery interval is a positive duration.
+   *
+   * @param discoveryInterval The discovery interval to validate.
+   */
+  private def validDiscoveryInterval(discoveryInterval: FiniteDuration): Task[Unit] =
+    if discoveryInterval > Duration.Zero then ZIO.unit else
+      ZIO.fail(IllegalArgumentException(s"Invalid discovery interval: $discoveryInterval."))
+
+  /**
+   * Validates that the retry backoffs are all positive durations.
+   *
+   * @param retryBackoffs The retry backoffs to validate.
+   */
+  private def validRetryBackoffs(retryBackoffs: Iterable[FiniteDuration]): Task[Unit] =
+    retryBackoffs.foldLeft(ZIO attempt ())((u, r) => u validate validRetryBackoff(r) map (_ => ()))
+
+  /**
+   * Validates that a retry backoff is a positive duration.
+   *
+   * @param retryBackoff The retry backoff to validate.
+   */
+  private def validRetryBackoff(retryBackoff: FiniteDuration): Task[Unit] =
+    if retryBackoff > Duration.Zero then ZIO.unit else
+      ZIO.fail(IllegalArgumentException(s"Invalid retry backoff: $retryBackoff."))
 
   /**
    * Loads a new backend configuration.
    *
-   * @param locationsAt   The path of the locations file to load.
-   * @param networkPort   The network port to communicate on.
-   * @param retryBackoffs The durations to wait between retrying outgoing messages.
+   * @param locationsAt       The path of the locations file to load.
+   * @param networkPort       The network port to communicate on.
+   * @param discoveryInterval The frequency of broadcast discovery attempts.
+   * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @return A new backend configuration.
    */
   def load(
     locationsAt: NonEmptyList[String] = DefaultLocationsAt,
     networkPort: Int = DefaultNetworkPort,
+    discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs
   ): Task[Configuration] =
     val properties = Properties()
@@ -103,7 +158,7 @@ object Configuration:
       actualLocations <- NonEmptySet.fromSet(SortedSet.from(maybeLocations)).fold(
         ZIO.fail(IllegalStateException(s"No device locations found at ${locationsPath(locationsAt)}."))
       )(ZIO.succeed)
-      result <- make(actualLocations, networkPort, retryBackoffs)
+      result <- make(actualLocations, networkPort, discoveryInterval, retryBackoffs)
     yield result
 
   /**
