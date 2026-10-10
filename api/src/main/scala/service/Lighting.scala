@@ -33,40 +33,40 @@ trait Lighting:
   def lights: UIO[NonEmptySet[Light]]
 
   /**
-   * Returns the light with the specified name.
+   * Returns the light with the specified key.
    *
    * @tparam Key The type of key to use.
    * @param key The key of the light to return.
-   * @return The light with the specified name.
+   * @return The light with the specified key.
    */
   def get[Key: Lighting.Key](key: Key): UIO[Option[Light]]
 
   /**
-   * Returns the lights with the specified names.
+   * Returns the lights with the specified keys.
    *
    * @tparam Key The type of key to use.
    * @param keys The keys of the lights to return.
-   * @return The requested lights.
+   * @return The lights with the specified keys.
    */
   def getAll[Key: Lighting.Key](keys: Iterable[Key]): UIO[Set[Light]]
 
   /**
-   * Updates the status of the light with the specified name.
+   * Updates the status of the light with the specified key.
    *
-   * @tparam Key The type of key to use.
-   * @param key    The keys of the light to set the status of.
-   * @param status The status to set on the light with the specified name.
-   * @return True if a light with the specified name was updated.
+   * @tparam Key   The type of key to use.
+   * @param key    The key of the light to set the status of.
+   * @param status The status to set on the light with the specified key.
+   * @return True if a light with the specified key was updated.
    */
   def update[Key: Lighting.Key](key: Key, status: Status): UIO[Boolean]
 
   /**
-   * Updates the status of the lights with the specified names.
+   * Updates the status of the lights with the specified keys.
    *
    * @tparam Key The type of key to use.
    * @param keys   The keys of the lights to set the status of.
-   * @param status The status to set on the lights with the specified names.
-   * @return The number of lights with the specified names that were updated.
+   * @param status The status to set on the lights with the specified keys.
+   * @return The number of lights with the specified keys that were updated.
    */
   def updateAll[Key: Lighting.Key](keys: Iterable[Key], status: Status): UIO[Int]
 
@@ -168,7 +168,7 @@ object Lighting:
       /**
        * Applies this visitor to the specified key.
        *
-       * @tparam Key The type of key apply.
+       * @tparam Key The type of key to apply.
        * @param key The key to apply.
        * @return The result of applying this visitor to the specified key.
        */
@@ -178,7 +178,7 @@ object Lighting:
       /**
        * Applies this visitor to the specified keys.
        *
-       * @tparam Key The type of key apply.
+       * @tparam Key The type of keys to apply.
        * @param keys The keys to apply.
        * @return The result of applying this visitor to the specified keys.
        */
@@ -189,7 +189,7 @@ object Lighting:
        * Called when the key type is a name.
        *
        * @param name The name to visit.
-       * @return The result of this visitor,
+       * @return The result of this visitor.
        */
       def onName(name: String): UIO[Option[T]]
 
@@ -197,7 +197,7 @@ object Lighting:
        * Called when the key type is a collection of names.
        *
        * @param names The names to visit.
-       * @return The result of this visitor,
+       * @return The result of this visitor.
        */
       def onNames(names: Iterable[String]): UIO[List[T]]
 
@@ -205,7 +205,7 @@ object Lighting:
        * Called when the key type is a MAC address.
        *
        * @param macAddress The MAC address to visit.
-       * @return The result of this visitor,
+       * @return The result of this visitor.
        */
       def onAddress(macAddress: Address): UIO[Option[T]]
 
@@ -213,7 +213,7 @@ object Lighting:
        * Called when the key type is a collection of MAC addresses.
        *
        * @param macAddresses The MAC addresses to visit.
-       * @return The result of this visitor,
+       * @return The result of this visitor.
        */
       def onAddresses(macAddresses: Iterable[Address]): UIO[List[T]]
 
@@ -221,7 +221,7 @@ object Lighting:
        * Called when the key type is a location.
        *
        * @param location The location to visit.
-       * @return The result of this visitor,
+       * @return The result of this visitor.
        */
       def onLocation(location: Location): UIO[Option[T]]
 
@@ -229,6 +229,6 @@ object Lighting:
        * Called when the key type is a collection of locations.
        *
        * @param locations The locations to visit.
-       * @return The result of this visitor,
+       * @return The result of this visitor.
        */
       def onLocations(locations: Iterable[Location]): UIO[List[T]]

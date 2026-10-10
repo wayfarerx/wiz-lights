@@ -22,7 +22,7 @@ import cats.kernel.Order
 import zio.{Task, ZIO}
 
 /** A lower-case representation of a MAC address. */
-opaque type Address = String
+opaque type Address <: String = String
 
 /**
  * Factory for MAC addresses.
@@ -36,7 +36,7 @@ object Address:
   given Order[Address] = Order.fromOrdering
 
   /** A pattern that matches valid MAC address strings. */
-  private val ValidMacAddress = "[0-9a-f]{12}".r
+  private val ValidMacAddress = "([0-9a-f]{12})".r
 
   /**
    * Creates a MAC address from the specified string.
