@@ -20,6 +20,7 @@ package backend
 import java.io.{File, InputStream}
 import java.nio.file.{Files, Paths}
 import java.util.Properties
+import java.util.regex.Matcher
 
 import scala.collection.immutable.SortedSet
 import scala.concurrent.duration.*
@@ -60,7 +61,10 @@ object Configuration:
   val DefaultRetryBackoffs: List[FiniteDuration] = 100.milliseconds :: 150.milliseconds :: 225.milliseconds :: Nil
 
   /** The default path of the file that defines the locations the backend can interact with. */
-  val DefaultLocationsAt: NonEmptyList[String] = NonEmptyList.of("~", ".wiz-lights-locations")
+  val DefaultLocationsAt: NonEmptyList[String] = NonEmptyList.of(
+    sys.props.getOrElse("user.home", "~"),
+    ".wiz-lights-locations"
+  )
 
   /**
    * Creates a new backend configuration.
@@ -97,7 +101,7 @@ object Configuration:
   /**
    * Validates that a list of location names is unique.
    *
-   * @param names Thw list of location names that must be unique.
+   * @param names The list of location names that must be unique.
    */
   private def validLocationNames(names: List[String]): Task[Unit] =
     if names.distinct.sizeCompare(names) == 0 then ZIO.unit else
@@ -106,7 +110,7 @@ object Configuration:
   /**
    * Validates that a list of location MAC addressed is unique.
    *
-   * @param macAddresses Thw list of location MAC addressed that must be unique.
+   * @param macAddresses The list of location MAC addressed that must be unique.
    */
   private def validLocationAddresses(macAddresses: List[Address]): Task[Unit] =
     if macAddresses.distinct.sizeCompare(macAddresses) == 0 then ZIO.unit else
@@ -118,7 +122,7 @@ object Configuration:
    * @param networkPort The network port to validate.
    */
   private def validNetworkPort(networkPort: Int): Task[Unit] =
-    if networkPort >= 0 && networkPort <= 65535 then ZIO.unit else
+    if networkPort >= 1 && networkPort <= 65535 then ZIO.unit else
       ZIO.fail(IllegalArgumentException(s"Invalid network port: $networkPort."))
 
   /**
@@ -187,7 +191,7 @@ object Configuration:
     ZIO.attempt(Files.newInputStream(Paths.get(locations.head, locations.tail *)))
 
   /**
-   * Releases an input stream from a locations file,
+   * Releases an input stream from a locations file.
    *
    * @param locations The locations file stream to release.
    */
@@ -201,4 +205,4 @@ object Configuration:
    * @return The formatted locations file path.
    */
   private def locationsPath(locations: NonEmptyList[String]): String =
-    locations.toList.mkString(File.separator).replaceAll("[\\\\/]+", File.separator)
+    locations.toList.mkString(File.separator).replaceAll("[\\\\/]+", Matcher.quoteReplacement(File.separator))

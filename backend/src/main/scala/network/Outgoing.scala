@@ -18,9 +18,9 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import protocol.Request
-
 import java.net.InetAddress
+
+import protocol.Request
 
 /**
  * Base type for outgoing network requests.
@@ -43,17 +43,9 @@ object Outgoing:
   case class Broadcast(request: Request) extends Outgoing
 
   /**
-   * A message that is sent to multiple devices.
+   * A message that is sent to the specified devices.
    *
    * @param addresses The addresses of the devices targeted by this message.
    * @param request   The request payload to send.
    */
-  case class Multicast(addresses: Set[InetAddress], request: Request) extends Outgoing
-
-  /**
-   * A message that is sent to a single device.
-   *
-   * @param address The address of the device targeted by this message.
-   * @param request The request payload to send.
-   */
-  case class Unicast(address: InetAddress, request: Request) extends Outgoing
+  case class Send(addresses: Set[InetAddress], request: Request) extends Outgoing

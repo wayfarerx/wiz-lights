@@ -22,21 +22,20 @@ import java.net.{InetAddress, InetSocketAddress, NetworkInterface}
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
+import scala.collection.immutable.SortedSet
 import scala.jdk.CollectionConverters.*
 
+import cats.data.NonEmptySet
 import io.circe.parser.parse as parseJson
 import io.circe.syntax.*
-
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-
 import zio.stream.{UStream, ZStream}
-import zio.{Chunk, Hub, Queue, RLayer, Scope, Task, UIO, URIO, ZIO, ZLayer}
-
+import zio.{Cause, Chunk, Duration, Hub, Queue, RLayer, Ref, Schedule, Scope, Task, UIO, URIO, ZIO, ZLayer}
 import protocol.*
 
 /**
@@ -79,27 +78,39 @@ case class SocketLive private(publisher: Queue[Outgoing], subscriptions: Hub[Inc
  */
 object SocketLive:
 
+  /** The default broadcast address. */
+  private val DefaultBroadcastAddress = ZIO.attempt(InetAddress.ofLiteral("255.255.255.255")).orDie.memoize.flatten
+
   /** The layer that provides the socket service. */
   val layer: RLayer[Configuration, Socket] = ZLayer.scoped {
     for
-      config <- ZIO.service[Configuration]
       scope <- ZIO.service[Scope]
+      config <- ZIO.service[Configuration]
       publisher <- Queue.unbounded[Outgoing]
       subscriptions <- Hub.unbounded[Incoming]
-      broadcastAddresses <- ZIO.attemptBlocking {
-        for
-          interface <- NetworkInterface.getNetworkInterfaces.asScala
-          interfaceAddress <- interface.getInterfaceAddresses.asScala
-          broadcastAddress <- Option(interfaceAddress.getBroadcast)
-        yield broadcastAddress
-      }.map(_.toSet)
+      broadcastAddresses <- DefaultBroadcastAddress.flatMap(Ref make Set(_))
+      _ <- refreshBroadcastAddresses(broadcastAddresses)
+        .repeat(Schedule.fixed(Duration.fromScala(config.discoveryInterval * Math.E))).forkIn(scope)
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
       handler = Handler()
       channel <- ZIO.acquireRelease(acquireChannel(eventLoopGroup, handler))(releaseChannel)
-      _ <- handler.stream.mapZIO(read.tupled).collectSome.foreach(subscriptions.publish).forkIn(scope)
-      _ <- ZStream.fromQueue(publisher).foreach(write(broadcastAddresses, channel, config.networkPort)).forkIn(scope)
+      _ <- handler.stream.mapZIO(read).collectSome.foreach(subscriptions.publish).forkIn(scope)
+      _ <- ZStream.fromQueue(publisher).foreach(write(broadcastAddresses, channel, config.networkPort, _)).forkIn(scope)
     yield SocketLive(publisher, subscriptions)
   }
+
+  /**
+   * Refreshes the specified set of broadcast addresses.
+   *
+   * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
+   */
+  private def refreshBroadcastAddresses(broadcastAddressesRef: Ref[Set[InetAddress]]): UIO[Unit] = for
+    interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toList.filter(_.isUp))) // FIXME
+      .catchAllCause(c => ZIO.logInfoCause("Failed to list the network interfaces.", c).map (_ => Nil))
+    interfaceAddresses = interfaces.flatMap(_.getInterfaceAddresses.asScala)
+    broadcastAddresses <- DefaultBroadcastAddress.map(interfaceAddresses.flatMap(Option apply _.getBroadcast).toSet + _)
+    _ <- broadcastAddressesRef.set(broadcastAddresses)
+  yield ()
 
   /**
    * Acquires an event loop group.
@@ -139,7 +150,7 @@ object SocketLive:
   /**
    * Releases a previously acquired channel.
    *
-   * @param channel The channel to release,
+   * @param channel The channel to release.
    */
   private def releaseChannel(channel: Channel): UIO[Unit] =
     ZIO.attemptBlocking(channel.close.await).ignore
@@ -147,17 +158,19 @@ object SocketLive:
   /**
    * Reads a message from the channel.
    *
-   * @param address The address of the sender.
-   * @param payload The content of the message.
+   * @param packet Either an error that was received or packet data.
    * @return A new message if one can be read.
    */
-  private def read(address: InetAddress, payload: ByteBuffer): UIO[Option[Incoming]] = {
-    for
-      text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
-      json <- ZIO.fromEither(parseJson(text))
-      response <- ZIO.fromEither(json.as[Response])
-    yield Some(Incoming(address, response))
-  }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
+  private def read(packet: Either[Throwable, (InetAddress, ByteBuffer)]): UIO[Option[Incoming]] = packet match
+    case Left(thrown) =>
+      ZIO.logInfoCause(s"Error while reading UDP packets: ${thrown.getMessage}", Cause.die(thrown)).map(_ => None)
+    case Right((address, payload)) => {
+      for
+        text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
+        json <- ZIO.fromEither(parseJson(text))
+        response <- ZIO.fromEither(json.as[Response])
+      yield Some(Incoming(address, response))
+    }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
 
   /**
    * Writes a message to a channel.
@@ -167,13 +180,17 @@ object SocketLive:
    * @param port               The port to write the message on.
    * @param message            The message to write.
    */
-  private def write(broadcastAddresses: Set[InetAddress], channel: Channel, port: Int)(message: Outgoing): UIO[Unit] =
-    val addresses = message match
-      case Outgoing.Broadcast(_) => broadcastAddresses
-      case Outgoing.Multicast(addresses, _) => addresses
-      case Outgoing.Unicast(address, _) => Set(address)
-    val payload = message.request.asJson.noSpaces
-    ZIO.foreachDiscard(addresses) { address =>
+  private def write(
+    broadcastAddresses: Ref[Set[InetAddress]],
+    channel: Channel,
+    port: Int,
+    message: Outgoing
+  ): UIO[Unit] = for
+    addresses <- message match
+      case Outgoing.Broadcast(_) => broadcastAddresses.get
+      case Outgoing.Send(addresses, _) => ZIO.succeed(addresses)
+    payload = message.request.asJson.noSpaces
+    _ <- ZIO.foreachDiscard(addresses) { address =>
       ZIO.attemptBlocking {
         channel.writeAndFlush(
           DatagramPacket(
@@ -181,8 +198,9 @@ object SocketLive:
             InetSocketAddress(address, port)
           )
         ).sync()
-      }
-    }.catchAllCause(ZIO.logWarningCause(_))
+      }.catchAllCause(ZIO.logWarningCause(_)).fork
+    }
+  yield ()
 
   /**
    * An inbound UDP packet handler that can target an optional live discovery service.
@@ -190,24 +208,24 @@ object SocketLive:
   private final class Handler extends SimpleChannelInboundHandler[DatagramPacket]:
 
     /** The callback to emit to the stream. */
-    @volatile private var callback: Option[ZStream.Emit[Any, Throwable, (InetAddress, ByteBuffer), Unit]] = None
+    @volatile private var callback: Option[ZStream.Emit[Any, Throwable, Either[Throwable, (InetAddress, ByteBuffer)], Unit]] = None
 
     /** The stream of packets received by this handler. */
-    lazy val stream: ZStream[Any, Throwable, (InetAddress, ByteBuffer)] = ZStream.async(cb => callback = Some(cb))
+    lazy val stream: ZStream[Any, Throwable, Either[Throwable, (InetAddress, ByteBuffer)]] = ZStream.async(cb => callback = Some(cb))
 
     /* Forward the datagram to the registered callback. */
     override def channelRead0(ctx: ChannelHandlerContext, packet: DatagramPacket): Unit = callback.foreach {
       val buffer = ByteBuffer.allocate(packet.content.readableBytes)
       packet.content.readBytes(buffer)
       buffer.flip()
-      _(ZIO.succeed(Chunk(packet.sender.getAddress -> buffer)))
+      _(ZIO.succeed(Chunk(Right(packet.sender.getAddress -> buffer))))
     }
 
     /* Forward the cause to the registered callback. */
     @annotation.nowarn("cat=deprecation")
     //noinspection ScalaDeprecation
     override def exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable): Unit =
-      callback.foreach(_(ZIO.fail(Some(cause))))
+      callback.foreach(_(ZIO.succeed(Chunk(Left(cause)))))
 
     /* Forward the closure to the registered callback. */
     override def channelInactive(ctx: ChannelHandlerContext): Unit =
