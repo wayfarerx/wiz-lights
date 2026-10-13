@@ -103,7 +103,7 @@ final class LightingLive private(
    * Broadcasts a "getPilot" request to the entire network.
    */
   private def discover: UIO[Unit] =
-    socket.publish(Outgoing.Broadcast(GetPilotRequest))
+    ??? // socket.publish(Outgoing.Broadcast(GetPilotRequest))
 
   /**
    * Called when a message is received from the network.
@@ -115,9 +115,10 @@ final class LightingLive private(
     device <- routed.fold {
       message.response match
         case response: GetPilotResponse =>
-          Address.make(response.mac).map(byMacAddress.get).catchAllCause { cause =>
-            ZIO.logWarningCause(s"Invalid MAC address in getPilot response: ${response.mac}.", cause).map(_ => None)
-          }
+          ???
+//          Address.make(response.mac).map(byMacAddress.get).catchAllCause { cause =>
+//            ZIO.logWarningCause(s"Invalid MAC address in getPilot response: ${response.mac}.", cause).map(_ => None)
+//          }
         case _ => ZIO.none
     }(ZIO.some)
     _ <- device.fold(ZIO.logInfo(s"Unable to route incoming message: $message.")) {

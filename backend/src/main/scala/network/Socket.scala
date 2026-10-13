@@ -22,20 +22,28 @@ import java.net.{InetAddress, InetSocketAddress, NetworkInterface}
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
-import scala.collection.immutable.SortedSet
 import scala.jdk.CollectionConverters.*
 
-import cats.data.NonEmptySet
 import io.circe.parser.parse as parseJson
 import io.circe.syntax.*
+
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
-import io.netty.channel.*
+import io.netty.channel.{
+  Channel,
+  ChannelHandlerContext,
+  ChannelOption,
+  EventLoopGroup,
+  MultiThreadIoEventLoopGroup,
+  SimpleChannelInboundHandler
+}
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import zio.stream.{UStream, ZStream}
+
 import zio.{Cause, Chunk, Duration, Hub, Queue, RLayer, Ref, Schedule, Scope, Task, UIO, URIO, ZIO, ZLayer}
+import zio.stream.{UStream, ZStream}
+
 import protocol.*
 
 /**
@@ -105,9 +113,14 @@ object SocketLive:
    * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
    */
   private def refreshBroadcastAddresses(broadcastAddressesRef: Ref[Set[InetAddress]]): UIO[Unit] = for
-    interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toList.filter(_.isUp))) // FIXME
+    interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toList))
       .catchAllCause(c => ZIO.logInfoCause("Failed to list the network interfaces.", c).map (_ => Nil))
-    interfaceAddresses = interfaces.flatMap(_.getInterfaceAddresses.asScala)
+    availableInterfaces <- ZIO.filter(interfaces) { i =>
+      ZIO.attempt(i.isUp).catchAllCause { c =>
+        ZIO.logInfoCause(s"Unable to query the network interface: ${i.getName}.", c).map(_ => false)
+      }
+    }
+    interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
     broadcastAddresses <- DefaultBroadcastAddress.map(interfaceAddresses.flatMap(Option apply _.getBroadcast).toSet + _)
     _ <- broadcastAddressesRef.set(broadcastAddresses)
   yield ()

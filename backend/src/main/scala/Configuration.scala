@@ -27,9 +27,10 @@ import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 import cats.data.{NonEmptyList, NonEmptySet}
-import net.wayfarerx.wizlights.model.{Address, Location}
+
 import zio.{Task, UIO, ZIO}
 
+import model.{Address, Location}
 
 /**
  * The configuration properties for the backend.

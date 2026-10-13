@@ -153,25 +153,26 @@ private object Device:
    * @return The resulting status.
    */
   private def asStatus(response: GetPilotResponse): Task[Status] =
-    if !response.state then ZIO.succeed(Status.Disabled) else
-      for
-        brightness <- response.dimming.fold(ZIO.succeed(Brightness.Medium))(Brightness.make)
-        result <- response.temp match
-          case Some(temp) =>
-            for
-              temperature <- Temperature.make(temp)
-            yield Status.White(temperature, brightness)
-          case None =>
-            response.sceneId match
-              case Some(sceneId) =>
-                for
-                  scene <- Scene.make(sceneId)
-                yield Status.Defined(scene, brightness)
-              case None =>
-                for
-                  color <- Color.make(response.r.getOrElse(0), response.g.getOrElse(0), response.b.getOrElse(0))
-                yield Status.Custom(color, brightness)
-      yield result
+    ???
+//    if !response.state then ZIO.succeed(Status.Disabled) else
+//      for
+//        brightness <- response.dimming.fold(ZIO.succeed(Brightness.Medium))(Brightness.make)
+//        result <- response.temp match
+//          case Some(temp) =>
+//            for
+//              temperature <- Temperature.make(temp)
+//            yield Status.White(temperature, brightness)
+//          case None =>
+//            response.sceneId match
+//              case Some(sceneId) =>
+//                for
+//                  scene <- Scene.make(sceneId)
+//                yield Status.Defined(scene, brightness)
+//              case None =>
+//                for
+//                  color <- Color.make(response.r.getOrElse(0), response.g.getOrElse(0), response.b.getOrElse(0))
+//                yield Status.Custom(color, brightness)
+//      yield result
 
   private case class State(
     inetAddress: InetAddress,

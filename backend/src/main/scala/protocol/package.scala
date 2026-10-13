@@ -21,9 +21,24 @@ package backend
  * Shared definitions in the JSON package.
  */
 package object protocol:
+
+  /** The name of the "error" key. */
+  private val ErrorKey = "error"
+
+  /** The name of the "id" key. */
+  private val IdKey = "id"
+
+  /** The name of the "method" key. */
+  private val MethodKey = "method"
+
+  /** The name of the "params" key. */
+  private val ParamsKey = "params"
+
+  /** The name of the "result" key. */
+  private val ResultKey = "result"
   
-  /** The name of the get pilot method. */
-  private val GetPilot = "getPilot"
+  /** The name of the "getPilot" method. */
+  private val GetPilotMethod = "getPilot"
   
-  /** The name of the set pilot method. */
-  private val SetPilot = "setPilot"
+  /** The name of the "setPilot" method. */
+  private val SetPilotMethod = "setPilot"
