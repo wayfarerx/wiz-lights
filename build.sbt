@@ -17,6 +17,9 @@ lazy val zioVersion = "2.1.24"
 lazy val Zio = "dev.zio" %% "zio" % zioVersion
 lazy val ZioStreams = "dev.zio" %% "zio-streams" % zioVersion
 lazy val ZioConcurrent = "dev.zio" %% "zio-concurrent" % zioVersion
+lazy val ZioTest = "dev.zio" %% "zio-test" % zioVersion % Test
+lazy val ZioTestSbt = "dev.zio" %% "zio-test-sbt" % zioVersion % Test
+lazy val ZioTestMagnolia = "dev.zio" %% "zio-test-magnolia" % zioVersion % Test
 
 lazy val zioPreludeVersion = "1.0.0-RC45"
 lazy val ZioPrelude = "dev.zio" %% "zio-prelude" % zioPreludeVersion
@@ -30,8 +33,12 @@ lazy val api = (project in file("api"))
     libraryDependencies ++= Seq(
       CatsCore,
       Zio,
-      ZioStreams
+      ZioStreams,
+      ZioTest,
+      ZioTestSbt,
+      ZioTestMagnolia
     ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     idePackagePrefix := Some("net.wayfarerx.wizlights")
   )
 

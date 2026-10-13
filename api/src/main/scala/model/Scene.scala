@@ -156,7 +156,7 @@ object Scene:
    * @return The scene with the specified ID if it exists or fails if it does not.
    */
   def make(id: Int): Task[Scene] =
-    byId.get(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene ID: $id.")))(ZIO.succeed(_))
+    valueBy(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene ID: $id.")))(ZIO.succeed(_))
 
   /**
    * Returns the scene with the specified name.
@@ -165,7 +165,7 @@ object Scene:
    * @return The scene with the specified name if it exists or fails if it does not.
    */
   def make(name: String): Task[Scene] =
-    byName.get(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene name: $name.")))(ZIO.succeed(_))
+    valueBy(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene name: $name.")))(ZIO.succeed(_))
 
   /**
    * Returns the scene with the specified ID.
