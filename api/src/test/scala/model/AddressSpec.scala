@@ -18,6 +18,7 @@ package net.wayfarerx.wizlights
 package model
 
 import cats.kernel.Order
+import zio.Scope
 import zio.test.*
 
 /**
@@ -25,52 +26,52 @@ import zio.test.*
  */
 object AddressSpec extends ZIOSpecDefault:
 
-  override def spec = suite("AddressSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("AddressSpec")(
     test("successfully create valid MAC addresses") {
       for
-        addr1 <- Address.make("0123456789ab")
-        addr2 <- Address.make("A1B2C3D4E5F6")
-        addr3 <- Address.make("  0123456789ab  ")
+        address1 <- Address.make("0123456789ab")
+        address2 <- Address.make("A1B2C3D4E5F6")
+        address3 <- Address.make("  0123456789ab  ")
       yield assertTrue(
-        addr1 == "0123456789ab",
-        addr2 == "a1b2c3d4e5f6",
-        addr3 == "0123456789ab"
+        address1 == "0123456789ab",
+        address2 == "a1b2c3d4e5f6",
+        address3 == "0123456789ab"
       )
     },
     test("fail on empty or blank MAC address") {
       for
-        err1 <- Address.make("").flip
-        err2 <- Address.make("   ").flip
+        error1 <- Address.make("").flip
+        error2 <- Address.make("   ").flip
       yield assertTrue(
-        err1.isInstanceOf[IllegalArgumentException],
-        err1.getMessage == "Empty or blank MAC address.",
-        err2.isInstanceOf[IllegalArgumentException],
-        err2.getMessage == "Empty or blank MAC address."
+        error1.isInstanceOf[IllegalArgumentException],
+        error1.getMessage == "Empty or blank MAC address.",
+        error2.isInstanceOf[IllegalArgumentException],
+        error2.getMessage == "Empty or blank MAC address."
       )
     },
     test("fail on malformed MAC address") {
       for
-        errInvalidChar <- Address.make("0123456789ag").flip
-        errTooShort <- Address.make("0123456789a").flip
-        errTooLong <- Address.make("0123456789abcdef").flip
-        errWithColons <- Address.make("01:23:45:67:89:ab").flip
+        errorInvalidChar <- Address.make("0123456789ag").flip
+        errorTooShort <- Address.make("0123456789a").flip
+        errorTooLong <- Address.make("0123456789abcdef").flip
+        errorWithColons <- Address.make("01:23:45:67:89:ab").flip
       yield assertTrue(
-        errInvalidChar.isInstanceOf[IllegalArgumentException],
-        errTooShort.isInstanceOf[IllegalArgumentException],
-        errTooLong.isInstanceOf[IllegalArgumentException],
-        errWithColons.isInstanceOf[IllegalArgumentException]
+        errorInvalidChar.isInstanceOf[IllegalArgumentException],
+        errorTooShort.isInstanceOf[IllegalArgumentException],
+        errorTooLong.isInstanceOf[IllegalArgumentException],
+        errorWithColons.isInstanceOf[IllegalArgumentException]
       )
     },
     test("support ordering and cats order") {
       for
-        addr1 <- Address.make("000000000001")
-        addr2 <- Address.make("000000000002")
+        address1 <- Address.make("000000000001")
+        address2 <- Address.make("000000000002")
       yield assertTrue(
-        Ordering[Address].compare(addr1, addr2) < 0,
-        Ordering[Address].compare(addr2, addr1) > 0,
-        Ordering[Address].compare(addr1, addr1) == 0,
-        Order[Address].compare(addr1, addr2) < 0,
-        Order[Address].eqv(addr1, addr1)
+        Ordering[Address].compare(address1, address2) < 0,
+        Ordering[Address].compare(address2, address1) > 0,
+        Ordering[Address].compare(address1, address1) == 0,
+        Order[Address].compare(address1, address2) < 0,
+        Order[Address].eqv(address1, address1)
       )
     }
   )

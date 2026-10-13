@@ -17,6 +17,7 @@
 package net.wayfarerx.wizlights
 package model
 
+import zio.Scope
 import zio.test.*
 
 /**
@@ -24,7 +25,7 @@ import zio.test.*
  */
 object StatusSpec extends ZIOSpecDefault:
 
-  override def spec = suite("StatusSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("StatusSpec")(
     test("support Disabled status") {
       val status: Status = Status.Disabled
       assertTrue(
@@ -35,13 +36,13 @@ object StatusSpec extends ZIOSpecDefault:
     },
     test("support White status") {
       for
-        temp <- Temperature.make(3000)
+        temperature <- Temperature.make(3000)
         brightness <- Brightness.make(80)
       yield
-        val status: Status = Status.White(temp, brightness)
+        val status: Status = Status.White(temperature, brightness)
         assertTrue(
           status match
-            case Status.White(t, b) => t == temp && b == brightness
+            case Status.White(t, b) => t == temperature && b == brightness
             case _ => false
         )
     },

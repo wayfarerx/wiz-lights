@@ -17,6 +17,7 @@
 package net.wayfarerx.wizlights
 package model
 
+import zio.Scope
 import zio.test.*
 
 /**
@@ -24,7 +25,7 @@ import zio.test.*
  */
 object ColorSpec extends ZIOSpecDefault:
 
-  override def spec = suite("ColorSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("ColorSpec")(
     test("predefined color constants") {
       assertTrue(
         Color.Black.red == 0 && Color.Black.green == 0 && Color.Black.blue == 0,

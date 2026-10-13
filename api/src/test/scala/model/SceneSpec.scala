@@ -17,6 +17,7 @@
 package net.wayfarerx.wizlights
 package model
 
+import zio.Scope
 import zio.test.*
 
 /**
@@ -24,7 +25,7 @@ import zio.test.*
  */
 object SceneSpec extends ZIOSpecDefault:
 
-  override def spec = suite("SceneSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("SceneSpec")(
     test("all scenes have expected IDs and names") {
       assertTrue(
         Scene.Ocean.id == 1 && Scene.Ocean.name == "Ocean",
@@ -71,12 +72,12 @@ object SceneSpec extends ZIOSpecDefault:
       for
         ocean <- Scene.make(1)
         rhythm <- Scene.make(1000)
-        invalidErr <- Scene.make(9999).flip
+        invalidError <- Scene.make(9999).flip
       yield assertTrue(
         ocean == Scene.Ocean,
         rhythm == Scene.Rhythm,
-        invalidErr.isInstanceOf[IllegalArgumentException],
-        invalidErr.getMessage == "Invalid scene ID: 9999."
+        invalidError.isInstanceOf[IllegalArgumentException],
+        invalidError.getMessage == "Invalid scene ID: 9999."
       )
     },
     test("Scene.make by name") {
@@ -85,17 +86,17 @@ object SceneSpec extends ZIOSpecDefault:
         oceanLower <- Scene.make("ocean")
         oceanTrimmed <- Scene.make("  ocean  ")
         rhythm <- Scene.make("rhythm")
-        emptyErr <- Scene.make("").flip
-        unknownErr <- Scene.make("unknown").flip
+        emptyError <- Scene.make("").flip
+        unknownError <- Scene.make("unknown").flip
       yield assertTrue(
         oceanExact == Scene.Ocean,
         oceanLower == Scene.Ocean,
         oceanTrimmed == Scene.Ocean,
         rhythm == Scene.Rhythm,
-        emptyErr.isInstanceOf[IllegalArgumentException],
-        emptyErr.getMessage == "Invalid scene name: .",
-        unknownErr.isInstanceOf[IllegalArgumentException],
-        unknownErr.getMessage == "Invalid scene name: unknown."
+        emptyError.isInstanceOf[IllegalArgumentException],
+        emptyError.getMessage == "Invalid scene name: .",
+        unknownError.isInstanceOf[IllegalArgumentException],
+        unknownError.getMessage == "Invalid scene name: unknown."
       )
     },
     test("Scene.valueBy ID and name") {

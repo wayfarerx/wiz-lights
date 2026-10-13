@@ -18,6 +18,7 @@ package net.wayfarerx.wizlights
 package model
 
 import cats.kernel.Order
+import zio.Scope
 import zio.test.*
 
 /**
@@ -25,34 +26,34 @@ import zio.test.*
  */
 object LightSpec extends ZIOSpecDefault:
 
-  override def spec = suite("LightSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("LightSpec")(
     test("create light and access properties") {
       for
-        addr <- Address.make("0123456789ab")
-        loc <- Location.make("Living Room", addr)
+        address <- Address.make("0123456789ab")
+        location <- Location.make("Living Room", address)
         brightness <- Brightness.make(100)
-        temp <- Temperature.make(4000)
-        status = Status.White(temp, brightness)
-        lightOn = Light(loc, Some(status))
-        lightOff = Light(loc, None)
+        temperature <- Temperature.make(4000)
+        status = Status.White(temperature, brightness)
+        lightOn = Light(location, Some(status))
+        lightOff = Light(location, None)
       yield assertTrue(
-        lightOn.location == loc,
+        lightOn.location == location,
         lightOn.status.contains(status),
         lightOn.name == "Living Room",
-        lightOff.location == loc,
+        lightOff.location == location,
         lightOff.status.isEmpty,
         lightOff.name == "Living Room"
       )
     },
     test("support ordering and cats order based on location") {
       for
-        addr1 <- Address.make("000000000001")
-        addr2 <- Address.make("000000000002")
-        loc1 <- Location.make("Kitchen", addr1)
-        loc2 <- Location.make("Living Room", addr2)
-        light1 = Light(loc1, None)
-        light2 = Light(loc2, Some(Status.Disabled))
-        light1WithStatus = Light(loc1, Some(Status.Disabled))
+        address1 <- Address.make("000000000001")
+        address2 <- Address.make("000000000002")
+        location1 <- Location.make("Kitchen", address1)
+        location2 <- Location.make("Living Room", address2)
+        light1 = Light(location1, None)
+        light2 = Light(location2, Some(Status.Disabled))
+        light1WithStatus = Light(location1, Some(Status.Disabled))
       yield assertTrue(
         Ordering[Light].compare(light1, light2) < 0,
         Ordering[Light].compare(light2, light1) > 0,

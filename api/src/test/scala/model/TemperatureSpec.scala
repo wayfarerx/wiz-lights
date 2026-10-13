@@ -17,6 +17,7 @@
 package net.wayfarerx.wizlights
 package model
 
+import zio.Scope
 import zio.test.*
 
 /**
@@ -24,7 +25,7 @@ import zio.test.*
  */
 object TemperatureSpec extends ZIOSpecDefault:
 
-  override def spec = suite("TemperatureSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("TemperatureSpec")(
     test("predefined temperature constants") {
       assertTrue(
         Temperature.Warmest.value == 2200,

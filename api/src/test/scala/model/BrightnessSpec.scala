@@ -17,6 +17,7 @@
 package net.wayfarerx.wizlights
 package model
 
+import zio.Scope
 import zio.test.*
 
 /**
@@ -24,7 +25,7 @@ import zio.test.*
  */
 object BrightnessSpec extends ZIOSpecDefault:
 
-  override def spec = suite("BrightnessSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("BrightnessSpec")(
     test("predefined brightness constants") {
       assertTrue(
         Brightness.Dimmest.value == 10,

@@ -18,6 +18,7 @@ package net.wayfarerx.wizlights
 package model
 
 import cats.kernel.Order
+import zio.Scope
 import zio.test.*
 
 /**
@@ -25,46 +26,46 @@ import zio.test.*
  */
 object LocationSpec extends ZIOSpecDefault:
 
-  override def spec = suite("LocationSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("LocationSpec")(
     test("successfully create valid locations and trim name") {
       for
-        addr <- Address.make("0123456789ab")
-        loc1 <- Location.make("Living Room", addr)
-        loc2 <- Location.make("  Living Room  ", addr)
+        address <- Address.make("0123456789ab")
+        location1 <- Location.make("Living Room", address)
+        location2 <- Location.make("  Living Room  ", address)
       yield assertTrue(
-        loc1.name == "Living Room",
-        loc1.macAddress == addr,
-        loc2.name == "Living Room",
-        loc1 == loc2
+        location1.name == "Living Room",
+        location1.macAddress == address,
+        location2.name == "Living Room",
+        location1 == location2
       )
     },
     test("fail when name is empty or blank") {
       for
-        addr <- Address.make("0123456789ab")
-        err1 <- Location.make("", addr).flip
-        err2 <- Location.make("   ", addr).flip
+        address <- Address.make("0123456789ab")
+        error1 <- Location.make("", address).flip
+        error2 <- Location.make("   ", address).flip
       yield assertTrue(
-        err1.isInstanceOf[IllegalArgumentException],
-        err1.getMessage == "Empty or blank location name.",
-        err2.isInstanceOf[IllegalArgumentException],
-        err2.getMessage == "Empty or blank location name."
+        error1.isInstanceOf[IllegalArgumentException],
+        error1.getMessage == "Empty or blank location name.",
+        error2.isInstanceOf[IllegalArgumentException],
+        error2.getMessage == "Empty or blank location name."
       )
     },
     test("support ordering and cats order") {
       for
-        addr1 <- Address.make("000000000001")
-        addr2 <- Address.make("000000000002")
-        locA1 <- Location.make("Alpha", addr1)
-        locA2 <- Location.make("Alpha", addr2)
-        locB1 <- Location.make("Beta", addr1)
+        address1 <- Address.make("000000000001")
+        address2 <- Address.make("000000000002")
+        locationA1 <- Location.make("Alpha", address1)
+        locationA2 <- Location.make("Alpha", address2)
+        locationB1 <- Location.make("Beta", address1)
       yield assertTrue(
-        Ordering[Location].compare(locA1, locB1) < 0,
-        Ordering[Location].compare(locB1, locA1) > 0,
-        Ordering[Location].compare(locA1, locA2) < 0,
-        Ordering[Location].compare(locA2, locA1) > 0,
-        Ordering[Location].compare(locA1, locA1) == 0,
-        Order[Location].compare(locA1, locB1) < 0,
-        Order[Location].eqv(locA1, locA1)
+        Ordering[Location].compare(locationA1, locationB1) < 0,
+        Ordering[Location].compare(locationB1, locationA1) > 0,
+        Ordering[Location].compare(locationA1, locationA2) < 0,
+        Ordering[Location].compare(locationA2, locationA1) > 0,
+        Ordering[Location].compare(locationA1, locationA1) == 0,
+        Order[Location].compare(locationA1, locationB1) < 0,
+        Order[Location].eqv(locationA1, locationA1)
       )
     }
   )

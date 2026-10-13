@@ -17,7 +17,7 @@
 package net.wayfarerx.wizlights
 package service
 
-import zio.{UIO, ZIO}
+import zio.{Scope, UIO, ZIO}
 import zio.test.*
 
 import model.{Address, Location}
@@ -47,7 +47,7 @@ object LightingSpec extends ZIOSpecDefault:
     override def onLocations(locations: Iterable[Location]): UIO[List[String]] =
       ZIO.succeed(locations.map(location => s"location:${location.name}").toList)
 
-  override def spec = suite("LightingSpec")(
+  override def spec: Spec[TestEnvironment & Scope, Any] = suite("LightingSpec")(
     test("Lighting.Key given instances and singleton objects") {
       assertTrue(
         summon[Lighting.Key[String]] == Lighting.Key.Names,
@@ -68,10 +68,10 @@ object LightingSpec extends ZIOSpecDefault:
     test("Lighting.Key.Addresses dispatching to visitor") {
       val visitor = new TestVisitor
       for
-        addr1 <- Address.make("0123456789ab")
-        addr2 <- Address.make("cdef01234567")
-        single <- Lighting.Key.Addresses(addr1, visitor)
-        multiple <- Lighting.Key.Addresses(List(addr1, addr2), visitor)
+        address1 <- Address.make("0123456789ab")
+        address2 <- Address.make("cdef01234567")
+        single <- Lighting.Key.Addresses(address1, visitor)
+        multiple <- Lighting.Key.Addresses(List(address1, address2), visitor)
       yield assertTrue(
         single.contains("address:0123456789ab"),
         multiple == List("address:0123456789ab", "address:cdef01234567")
@@ -80,12 +80,12 @@ object LightingSpec extends ZIOSpecDefault:
     test("Lighting.Key.Locations dispatching to visitor") {
       val visitor = new TestVisitor
       for
-        addr1 <- Address.make("0123456789ab")
-        addr2 <- Address.make("cdef01234567")
-        loc1 <- Location.make("Living Room", addr1)
-        loc2 <- Location.make("Bedroom", addr2)
-        single <- Lighting.Key.Locations(loc1, visitor)
-        multiple <- Lighting.Key.Locations(List(loc1, loc2), visitor)
+        address1 <- Address.make("0123456789ab")
+        address2 <- Address.make("cdef01234567")
+        location1 <- Location.make("Living Room", address1)
+        location2 <- Location.make("Bedroom", address2)
+        single <- Lighting.Key.Locations(location1, visitor)
+        multiple <- Lighting.Key.Locations(List(location1, location2), visitor)
       yield assertTrue(
         single.contains("location:Living Room"),
         multiple == List("location:Living Room", "location:Bedroom")
@@ -94,31 +94,31 @@ object LightingSpec extends ZIOSpecDefault:
     test("Lighting.Key.Visitor apply delegation for single keys") {
       val visitor = new TestVisitor
       for
-        addr <- Address.make("0123456789ab")
-        loc <- Location.make("Kitchen", addr)
+        address <- Address.make("0123456789ab")
+        location <- Location.make("Kitchen", address)
         byName <- visitor("lamp")
-        byAddr <- visitor(addr)
-        byLoc <- visitor(loc)
+        byAddress <- visitor(address)
+        byLocation <- visitor(location)
       yield assertTrue(
         byName.contains("name:lamp"),
-        byAddr.contains("address:0123456789ab"),
-        byLoc.contains("location:Kitchen")
+        byAddress.contains("address:0123456789ab"),
+        byLocation.contains("location:Kitchen")
       )
     },
     test("Lighting.Key.Visitor apply delegation for collections of keys") {
       val visitor = new TestVisitor
       for
-        addr1 <- Address.make("000000000001")
-        addr2 <- Address.make("000000000002")
-        loc1 <- Location.make("Kitchen", addr1)
-        loc2 <- Location.make("Living Room", addr2)
+        address1 <- Address.make("000000000001")
+        address2 <- Address.make("000000000002")
+        location1 <- Location.make("Kitchen", address1)
+        location2 <- Location.make("Living Room", address2)
         byNames <- visitor(List("lamp1", "lamp2"))
-        byAddrs <- visitor(List(addr1, addr2))
-        byLocs <- visitor(List(loc1, loc2))
+        byAddresses <- visitor(List(address1, address2))
+        byLocations <- visitor(List(location1, location2))
       yield assertTrue(
         byNames == List("name:lamp1", "name:lamp2"),
-        byAddrs == List("address:000000000001", "address:000000000002"),
-        byLocs == List("location:Kitchen", "location:Living Room")
+        byAddresses == List("address:000000000001", "address:000000000002"),
+        byLocations == List("location:Kitchen", "location:Living Room")
       )
     }
   )
