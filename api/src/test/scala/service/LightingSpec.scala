@@ -1,0 +1,124 @@
+/*
+ * Copyright (c) 2026 wayfarerx.net.
+ *
+ * This file is licensed to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package net.wayfarerx.wizlights
+package service
+
+import zio.{UIO, ZIO}
+import zio.test.*
+
+import model.{Address, Location}
+
+/**
+ * Specifications for the non-abstract elements of the Lighting service.
+ */
+object LightingSpec extends ZIOSpecDefault:
+
+  private class TestVisitor extends Lighting.Key.Visitor[String]:
+
+    override def onName(name: String): UIO[Option[String]] =
+      ZIO.succeed(Some(s"name:$name"))
+
+    override def onNames(names: Iterable[String]): UIO[List[String]] =
+      ZIO.succeed(names.map(name => s"name:$name").toList)
+
+    override def onAddress(macAddress: Address): UIO[Option[String]] =
+      ZIO.succeed(Some(s"address:$macAddress"))
+
+    override def onAddresses(macAddresses: Iterable[Address]): UIO[List[String]] =
+      ZIO.succeed(macAddresses.map(address => s"address:$address").toList)
+
+    override def onLocation(location: Location): UIO[Option[String]] =
+      ZIO.succeed(Some(s"location:${location.name}"))
+
+    override def onLocations(locations: Iterable[Location]): UIO[List[String]] =
+      ZIO.succeed(locations.map(location => s"location:${location.name}").toList)
+
+  override def spec = suite("LightingSpec")(
+    test("Lighting.Key given instances and singleton objects") {
+      assertTrue(
+        summon[Lighting.Key[String]] == Lighting.Key.Names,
+        summon[Lighting.Key[Address]] == Lighting.Key.Addresses,
+        summon[Lighting.Key[Location]] == Lighting.Key.Locations
+      )
+    },
+    test("Lighting.Key.Names dispatching to visitor") {
+      val visitor = new TestVisitor
+      for
+        single <- Lighting.Key.Names("lamp", visitor)
+        multiple <- Lighting.Key.Names(List("lamp1", "lamp2"), visitor)
+      yield assertTrue(
+        single.contains("name:lamp"),
+        multiple == List("name:lamp1", "name:lamp2")
+      )
+    },
+    test("Lighting.Key.Addresses dispatching to visitor") {
+      val visitor = new TestVisitor
+      for
+        addr1 <- Address.make("0123456789ab")
+        addr2 <- Address.make("cdef01234567")
+        single <- Lighting.Key.Addresses(addr1, visitor)
+        multiple <- Lighting.Key.Addresses(List(addr1, addr2), visitor)
+      yield assertTrue(
+        single.contains("address:0123456789ab"),
+        multiple == List("address:0123456789ab", "address:cdef01234567")
+      )
+    },
+    test("Lighting.Key.Locations dispatching to visitor") {
+      val visitor = new TestVisitor
+      for
+        addr1 <- Address.make("0123456789ab")
+        addr2 <- Address.make("cdef01234567")
+        loc1 <- Location.make("Living Room", addr1)
+        loc2 <- Location.make("Bedroom", addr2)
+        single <- Lighting.Key.Locations(loc1, visitor)
+        multiple <- Lighting.Key.Locations(List(loc1, loc2), visitor)
+      yield assertTrue(
+        single.contains("location:Living Room"),
+        multiple == List("location:Living Room", "location:Bedroom")
+      )
+    },
+    test("Lighting.Key.Visitor apply delegation for single keys") {
+      val visitor = new TestVisitor
+      for
+        addr <- Address.make("0123456789ab")
+        loc <- Location.make("Kitchen", addr)
+        byName <- visitor("lamp")
+        byAddr <- visitor(addr)
+        byLoc <- visitor(loc)
+      yield assertTrue(
+        byName.contains("name:lamp"),
+        byAddr.contains("address:0123456789ab"),
+        byLoc.contains("location:Kitchen")
+      )
+    },
+    test("Lighting.Key.Visitor apply delegation for collections of keys") {
+      val visitor = new TestVisitor
+      for
+        addr1 <- Address.make("000000000001")
+        addr2 <- Address.make("000000000002")
+        loc1 <- Location.make("Kitchen", addr1)
+        loc2 <- Location.make("Living Room", addr2)
+        byNames <- visitor(List("lamp1", "lamp2"))
+        byAddrs <- visitor(List(addr1, addr2))
+        byLocs <- visitor(List(loc1, loc2))
+      yield assertTrue(
+        byNames == List("name:lamp1", "name:lamp2"),
+        byAddrs == List("address:000000000001", "address:000000000002"),
+        byLocs == List("location:Kitchen", "location:Living Room")
+      )
+    }
+  )
