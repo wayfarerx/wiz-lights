@@ -20,15 +20,12 @@ package model
 import cats.kernel.Order
 
 /**
- * Information about a powered light.
+ * The state of a light.
  *
- * @param location The location of this light.
- * @param status   The state of this light if it is powered on.
+ * @param address The MAC address of this light.
+ * @param status  The status of this light if it is powered on.
  */
-case class Light(location: Location, status: Option[Status]):
-
-  /** Returns the name of this light. */
-  def name: String = location.name
+case class Light(address: Address, status: Option[Status])
 
 /**
  * Definitions associated with lights.
@@ -36,7 +33,7 @@ case class Light(location: Location, status: Option[Status]):
 object Light:
 
   /** The ordering of lights. */
-  given Ordering[Light] = Ordering.by[Light, Location](_.location)
+  given Ordering[Light] = Ordering.by[Light, Address](_.address)
 
   /** The cats order of lights. */
   given Order[Light] = Order.fromOrdering

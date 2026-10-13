@@ -22,7 +22,7 @@ import cats.data.NonEmptySet
 import zio.stream.UStream
 import zio.{Scope, UIO, URIO}
 
-import model.{Address, Light, Location, Status}
+import model.{Address, Light, Status}
 
 /**
  * A service that interacts with configured lights.
@@ -116,9 +116,6 @@ object Lighting:
     /** Addresses can be used as keys for the lighting service. */
     given Key[Address] = Addresses
 
-    /** Locations can be used as keys for the lighting service. */
-    given Key[Location] = Locations
-
     /**
      * Names can be used as keys for the lighting service.
      */
@@ -144,19 +141,6 @@ object Lighting:
       /* Apply a visitor to a collection of keys. */
       override def apply[U](keys: Iterable[Address], visitor: Visitor[U]): UIO[List[U]] =
         visitor.onAddresses(keys)
-
-    /**
-     * Locations can be used as keys for the lighting service.
-     */
-    case object Locations extends Key[Location]:
-
-      /* Apply a visitor to a key. */
-      override def apply[U](key: Location, visitor: Visitor[U]): UIO[Option[U]] =
-        visitor.onLocation(key)
-
-      /* Apply a visitor to a collection of keys. */
-      override def apply[U](keys: Iterable[Location], visitor: Visitor[U]): UIO[List[U]] =
-        visitor.onLocations(keys)
 
     /**
      * A visitor for key types.
@@ -204,31 +188,15 @@ object Lighting:
       /**
        * Called when the key type is a MAC address.
        *
-       * @param macAddress The MAC address to visit.
+       * @param address The MAC address to visit.
        * @return The result of this visitor.
        */
-      def onAddress(macAddress: Address): UIO[Option[T]]
+      def onAddress(address: Address): UIO[Option[T]]
 
       /**
        * Called when the key type is a collection of MAC addresses.
        *
-       * @param macAddresses The MAC addresses to visit.
+       * @param addresses The MAC addresses to visit.
        * @return The result of this visitor.
        */
-      def onAddresses(macAddresses: Iterable[Address]): UIO[List[T]]
-
-      /**
-       * Called when the key type is a location.
-       *
-       * @param location The location to visit.
-       * @return The result of this visitor.
-       */
-      def onLocation(location: Location): UIO[Option[T]]
-
-      /**
-       * Called when the key type is a collection of locations.
-       *
-       * @param locations The locations to visit.
-       * @return The result of this visitor.
-       */
-      def onLocations(locations: Iterable[Location]): UIO[List[T]]
+      def onAddresses(addresses: Iterable[Address]): UIO[List[T]]

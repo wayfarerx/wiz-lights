@@ -86,22 +86,22 @@ object Response:
  * The get pilot response.
  *
  * @param id The optional ID to use when correlating this response with a request.
- * @param outcome Either an error payload or the get pilot payload.
+ * @param payload Either an error payload or the get pilot payload.
  */
 case class GetPilotResponse(
   id: Option[Int],
-  outcome: Either[ErrorResponsePayload, GetPilotResponsePayload]
+  payload: Either[ErrorResponsePayload, GetPilotResponsePayload]
 ) extends Response
 
 /**
  * The set pilot response.
  *
  * @param id The optional ID to use when correlating this response with a request.
- * @param outcome Either an error payload or the set pilot payload.
+ * @param payload Either an error payload or the set pilot payload.
  */
 case class SetPilotResponse(
   id: Option[Int],
-  outcome: Either[ErrorResponsePayload, SetPilotResponsePayload]
+  payload: Either[ErrorResponsePayload, SetPilotResponsePayload]
 ) extends Response
 
 /**

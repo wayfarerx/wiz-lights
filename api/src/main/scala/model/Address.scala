@@ -36,7 +36,7 @@ object Address:
   given Order[Address] = Order.fromOrdering
 
   /** A pattern that matches valid MAC address strings. */
-  private val ValidMacAddress = "([0-9a-f]{12})".r
+  private val ValidAddress = "([0-9a-f]{12})".r
 
   /**
    * Creates a MAC address from the specified string.
@@ -46,5 +46,5 @@ object Address:
    */
   def make(string: String): Task[Address] = string.toLowerCase.trim match
     case invalid if invalid.isEmpty => ZIO.fail(IllegalArgumentException("Empty or blank MAC address."))
-    case ValidMacAddress(macAddress) => ZIO.succeed(macAddress)
+    case ValidAddress(address) => ZIO.succeed(address)
     case malformed => ZIO.fail(IllegalArgumentException(s"Malformed MAC address: $malformed."))
