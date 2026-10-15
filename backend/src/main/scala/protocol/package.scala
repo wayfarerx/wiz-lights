@@ -25,9 +25,6 @@ package object protocol:
   /** The name of the "error" key. */
   private val ErrorKey = "error"
 
-  /** The name of the "id" key. */
-  private val IdKey = "id"
-
   /** The name of the "method" key. */
   private val MethodKey = "method"
 
@@ -36,9 +33,21 @@ package object protocol:
 
   /** The name of the "result" key. */
   private val ResultKey = "result"
+
+  /** The name of the "firstBeat" method. */
+  private val FirstBeatMethod = "firstBeat"
   
   /** The name of the "getPilot" method. */
   private val GetPilotMethod = "getPilot"
+
+  /** The name of the "getSystemConfig" method. */
+  private val GetSystemConfigMethod = "getSystemConfig"
+
+  /** The name of the "registration" method. */
+  private val RegistrationMethod = "registration"
   
   /** The name of the "setPilot" method. */
   private val SetPilotMethod = "setPilot"
+
+  /** The name of the "syncPilot" method. */
+  private val SyncPilotMethod = "syncPilot"

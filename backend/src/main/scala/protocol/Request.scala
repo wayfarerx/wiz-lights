@@ -20,25 +20,23 @@ package protocol
 
 import io.circe.{Encoder, Json, JsonObject}
 import io.circe.generic.semiauto.deriveEncoder
-import io.circe.syntax.*
 
 /**
  * Base type for requests.
  */
-sealed trait Request:
-
-  /** The optional ID to use when correlating the response to this request. */
-  def id: Option[Int]
+sealed trait Request
 
 /**
  * Definitions associated with requests.
  */
 object Request:
-
+  
   /** The generic request encoder. */
   given Encoder[Request] = Encoder.instance {
-    case request: GetPilotRequest => request.asJson
-    case request: SetPilotRequest => request.asJson
+    case GetPilotRequest => GetPilotRequest.encoder(GetPilotRequest)
+    case GetSystemConfigRequest => GetSystemConfigRequest.encoder(GetSystemConfigRequest)
+    case request: RegistrationRequest => RegistrationRequest.encoder(request)
+    case request: SetPilotRequest => SetPilotRequest.encoder(request)
   }
 
   /**
@@ -49,27 +47,49 @@ object Request:
    * @param encoder The encoder to wrap in an envelope.
    * @return The request encoder wrapped in the protocol envelope.
    */
-  private[protocol] def encoding[T <: Request](method: String, encoder: Encoder[T]): Encoder[T] = encoder.mapJson {
-    _.dropNullValues.mapObject { json =>
-      val fields = MethodKey -> Json.fromString(method) :: ParamsKey -> json.remove(IdKey).asJson :: Nil
-      JsonObject(json(IdKey).fold(fields)(IdKey -> _ :: fields) *)
+  private[protocol] def encoding[T <: Request](method: String, encoder: Encoder[T]): Encoder[T] =
+    encoder.mapJson {
+      _.mapObject { json =>
+        JsonObject(MethodKey -> Json.fromString(method) :: ParamsKey -> json.toJson.dropNullValues :: Nil *)
+      }
     }
-  }
 
 /**
  * The get pilot request.
- *
- * @param id The optional ID to use when correlating the response with this request.
  */
-case class GetPilotRequest(id: Option[Int] = None) extends Request
-
-/**
- * Definitions associated with get pilot requests.
- */
-object GetPilotRequest:
+case object GetPilotRequest extends Request:
 
   /** The get pilot request encoder. */
-  given Encoder[GetPilotRequest] = Request.encoding(GetPilotMethod, deriveEncoder)
+  given encoder: Encoder[GetPilotRequest.type] = Request.encoding(GetPilotMethod, deriveEncoder)
+
+/**
+ * The get system config request.
+ */
+case object GetSystemConfigRequest extends Request:
+
+  /** The get system config request encoder. */
+  given encoder: Encoder[GetSystemConfigRequest.type] = Request.encoding(GetSystemConfigMethod, deriveEncoder)
+
+/**
+ * The registration request.
+ *
+ * @param phoneMac The MAC address of the device registering for updates.
+ * @param phoneIp  The IP address of the device registering for updates.
+ * @param register True to register for updates, false to deregister.
+ */
+case class RegistrationRequest(
+  phoneMac: String,
+  phoneIp: String,
+  register: Boolean = true
+) extends Request
+
+/**
+ * Definitions associated with registration requests.
+ */
+object RegistrationRequest:
+
+  /** The registration request encoder. */
+  given encoder: Encoder[RegistrationRequest] = Request.encoding(RegistrationMethod, deriveEncoder)
 
 /**
  * The set pilot request.
@@ -84,10 +104,9 @@ object GetPilotRequest:
  * @param b       The blue color component (0 - 255).
  * @param c       The cool white component (0 - 255).
  * @param w       The warm white component (0 - 255).
- * @param id      The optional ID to use when correlating the response with this request.
  */
 case class SetPilotRequest(
-  state: Boolean,
+  state: Option[Boolean] = None,
   dimming: Option[Int] = None,
   sceneId: Option[Int] = None,
   speed: Option[Int] = None,
@@ -96,8 +115,7 @@ case class SetPilotRequest(
   g: Option[Int] = None,
   b: Option[Int] = None,
   c: Option[Int] = None,
-  w: Option[Int] = None,
-  id: Option[Int] = None
+  w: Option[Int] = None
 ) extends Request
 
 /**
@@ -106,4 +124,4 @@ case class SetPilotRequest(
 object SetPilotRequest:
 
   /** The set pilot request encoder. */
-  given Encoder[SetPilotRequest] = Request.encoding(SetPilotMethod, deriveEncoder)
+  given encoder: Encoder[SetPilotRequest] = Request.encoding(SetPilotMethod, deriveEncoder)

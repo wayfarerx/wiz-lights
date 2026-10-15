@@ -57,8 +57,12 @@ lazy val backend = (project in file("backend"))
       Zio,
       ZioStreams,
       ZioConcurrent,
-      ZioPrelude
+      ZioPrelude,
+      ZioTest,
+      ZioTestSbt,
+      ZioTestMagnolia
     ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     idePackagePrefix := Some("net.wayfarerx.wizlights.backend")
   )
   .dependsOn(api)
