@@ -64,7 +64,7 @@ object Response:
    * @tparam R The type of response being decoded.
    * @tparam P The type of result payload being decoded.
    * @param payloadKey The name of the payload key, typically "result" or "params".
-   * @param f The function that creates a response from an optional correlation ID and payload.
+   * @param f The function that creates a response from a payload.
    * @return A decoder for a response type from a payload type.
    */
   private[protocol] def payloadDecoder[R <: Response, P: Decoder](
@@ -261,15 +261,15 @@ case class GetPilotResponsePayload(
   mac: String,
   rssi: Int,
   state: Boolean,
-  dimming: Option[Int],
-  sceneId: Option[Int],
-  speed: Option[Int],
-  temp: Option[Int],
-  r: Option[Int],
-  g: Option[Int],
-  b: Option[Int],
-  c: Option[Int],
-  w: Option[Int]
+  dimming: Option[Int] = None,
+  sceneId: Option[Int] = None,
+  speed: Option[Int] = None,
+  temp: Option[Int] = None,
+  r: Option[Int] = None,
+  g: Option[Int] = None,
+  b: Option[Int] = None,
+  c: Option[Int] = None,
+  w: Option[Int] = None
 )
 
 /**
