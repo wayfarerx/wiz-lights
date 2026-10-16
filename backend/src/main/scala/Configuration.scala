@@ -17,30 +17,21 @@
 package net.wayfarerx.wizlights
 package backend
 
-import java.io.{File, InputStream}
-import java.nio.file.{Files, Paths}
-import java.util.Properties
-import java.util.regex.Matcher
-
-import scala.collection.immutable.SortedSet
 import scala.concurrent.duration.*
-import scala.jdk.CollectionConverters.*
 
-import cats.data.{NonEmptyList, NonEmptySet}
-
-import zio.{Task, UIO, ZIO}
-
-import model.Address
+import zio.{Task, ZIO}
 
 /**
  * The configuration properties for the backend.
  *
- * @param networkPort       The network port to communicate on.
+ * @param commandPort       The network port to send commands on.
+ * @param listenerPort      The network port to also listen on.
  * @param discoveryInterval The frequency of broadcast discovery attempts.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  */
 case class Configuration private(
-  networkPort: Int,
+  commandPort: Int,
+  listenerPort: Int,
   discoveryInterval: FiniteDuration,
   retryBackoffs: List[FiniteDuration]
 )
@@ -50,8 +41,11 @@ case class Configuration private(
  */
 object Configuration:
 
-  /** The default network port to communicate on. */
-  val DefaultNetworkPort: Int = 38899
+  /** The default network port to send commands on. */
+  val DefaultCommandPort: Int = 38899
+
+  /** The default network port to listen on. */
+  val DefaultListenerPort: Int = 38900
 
   /** The default frequency of broadcast discovery attempts. */
   val DefaultDiscoveryInterval: FiniteDuration = 5.seconds
@@ -62,20 +56,23 @@ object Configuration:
   /**
    * Creates a new backend configuration.
    *
-   * @param networkPort       The network port to communicate on.
+   * @param commandPort       The network port to send commands on.
+   * @param listenerPort      The network port to listen on.
    * @param discoveryInterval The frequency of broadcast discovery attempts.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @return A new backend configuration.
    */
   def make(
-    networkPort: Int = DefaultNetworkPort,
+    commandPort: Int = DefaultCommandPort,
+    listenerPort: Int = DefaultListenerPort,
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs
   ): Task[Configuration] =
-      validNetworkPort(networkPort) validate
+    validNetworkPort(commandPort) validate
+      validNetworkPort(listenerPort) validate
       validDiscoveryInterval(discoveryInterval) validate
       validRetryBackoffs(retryBackoffs) map
-      (_ => Configuration(networkPort, discoveryInterval, retryBackoffs.toList))
+      (_ => Configuration(commandPort, listenerPort, discoveryInterval, retryBackoffs.toList))
 
   /**
    * Validates that the network port is a valid IP port.
