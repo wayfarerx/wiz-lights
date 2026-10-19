@@ -21,127 +21,84 @@ import zio.{Task, ZIO}
 
 /**
  * Scenes a light can perform.
- *
- * @param id   The identifier of this scene.
- * @param name The name of this scene.
  */
-enum Scene(val id: Int, val name: String):
+sealed trait Scene:
 
-  /** The Ocean scene. */
-  case Ocean extends Scene(1, "Ocean")
+  /** The identifier of this scene. */
+  def id: Int
 
-  /** The Romance scene. */
-  case Romance extends Scene(2, "Romance")
+  /** The name of this scene. */
+  def name: String
 
-  /** The Sunset scene. */
-  case Sunset extends Scene(3, "Sunset")
+  /** True if this scene is static, false if it is dynamic. */
+  def isStatic: Boolean
 
-  /** The Party scene. */
-  case Party extends Scene(4, "Party")
-
-  /** The Fireplace scene. */
-  case Fireplace extends Scene(5, "Fireplace")
-
-  /** The Cozy scene. */
-  case Cozy extends Scene(6, "Cozy")
-
-  /** The Forest scene. */
-  case Forest extends Scene(7, "Forest")
-
-  /** The Pastel Colors scene. */
-  case PastelColors extends Scene(8, "Pastel Colors")
-
-  /** The Wake-Up scene. */
-  case WakeUp extends Scene(9, "Wake-Up")
-
-  /** The Bedtime scene. */
-  case Bedtime extends Scene(10, "Bedtime")
-
-  /** The Warm White scene. */
-  case WarmWhite extends Scene(11, "Warm White")
-
-  /** The Daylight scene. */
-  case Daylight extends Scene(12, "Daylight")
-
-  /** The Cool White scene. */
-  case CoolWhite extends Scene(13, "Cool White")
-
-  /** The Night Light scene. */
-  case NightLight extends Scene(14, "Night Light")
-
-  /** The Focus scene. */
-  case Focus extends Scene(15, "Focus")
-
-  /** The Relax scene. */
-  case Relax extends Scene(16, "Relax")
-
-  /** The True Colors scene. */
-  case TrueColors extends Scene(17, "True Colors")
-
-  /** The TV Time scene. */
-  case TVTime extends Scene(18, "TV Time")
-
-  /** The Plant Growth scene. */
-  case PlantGrowth extends Scene(19, "Plant Growth")
-
-  /** The Spring scene. */
-  case Spring extends Scene(20, "Spring")
-
-  /** The Summer scene. */
-  case Summer extends Scene(21, "Summer")
-
-  /** The Fall scene. */
-  case Fall extends Scene(22, "Fall")
-
-  /** The Deep Dive scene. */
-  case DeepDive extends Scene(23, "Deep Dive")
-
-  /** The Jungle scene. */
-  case Jungle extends Scene(24, "Jungle")
-
-  /** The Mojito scene. */
-  case Mojito extends Scene(25, "Mojito")
-
-  /** The Club scene. */
-  case Club extends Scene(26, "Club")
-
-  /** The Christmas scene. */
-  case Christmas extends Scene(27, "Christmas")
-
-  /** The Halloween scene. */
-  case Halloween extends Scene(28, "Halloween")
-
-  /** The Candlelight scene. */
-  case Candlelight extends Scene(29, "Candlelight")
-
-  /** The Golden White scene. */
-  case GoldenWhite extends Scene(30, "Golden White")
-
-  /** The Pulse scene. */
-  case Pulse extends Scene(31, "Pulse")
-
-  /** The Steampunk scene. */
-  case Steampunk extends Scene(32, "Steampunk")
-
-  /** The Diwali scene. */
-  case Diwali extends Scene(33, "Diwali")
-
-  /** The White scene. */
-  case White extends Scene(34, "White")
-
-  /** The Alarm scene. */
-  case Alarm extends Scene(35, "Alarm")
-
-  /** The Snowy Sky scene. */
-  case SnowySky extends Scene(36, "Snowy Sky")
-
-  /** The Rhythm scene. */
-  case Rhythm extends Scene(1000, "Rhythm")
+  /** True if this scene is dynamic, false if it is static. */
+  final def isDynamic: Boolean = !isStatic
 
 /**
  * Definitions associated with scenes.
  */
 object Scene:
+
+  /** Export the static scenes. */
+  export Static.{
+    Cozy,
+    WarmWhite,
+    Daylight,
+    CoolWhite,
+    NightLight,
+    Focus,
+    Relax,
+    TrueColors,
+    TVTime,
+    PlantGrowth,
+    White,
+    Rhythm
+  }
+
+  /** Export the dynamic scenes. */
+  export Dynamic.{
+    Ocean,
+    Romance,
+    Sunset,
+    Party,
+    Fireplace,
+    Forest,
+    PastelColors,
+    WakeUp,
+    Bedtime,
+    Spring,
+    Summer,
+    Fall,
+    DeepDive,
+    Jungle,
+    Mojito,
+    Club,
+    Christmas,
+    Halloween,
+    Candlelight,
+    GoldenWhite,
+    Pulse,
+    Steampunk,
+    Diwali,
+    Alarm,
+    SnowySky,
+    User1,
+    User2,
+    User3,
+    User4,
+    User5,
+    User6,
+    User7,
+    User8,
+    User9,
+    User10
+  }
+
+  /** The scenes indexed by their IDs. */
+  val values: Array[Scene] =
+    (Static.values.iterator ++ Dynamic.values.iterator).toArray.sortBy(_.id)
 
   /** The scenes indexed by their IDs. */
   private lazy val byId = values.map(scene => scene.id -> scene).toMap
@@ -182,3 +139,256 @@ object Scene:
    * @return The scene with the specified name if it exists.
    */
   def valueBy(name: String): Option[Scene] = byName.get(name.toLowerCase.trim)
+
+  /**
+   * Static scenes that maintain a fixed color or color temperature.
+   *
+   * @param id   The identifier of this static scene.
+   * @param name The name of this static scene.
+   */
+  enum Static(val id: Int, val name: String) extends Scene:
+
+    /* True because this is a static scene. */
+    override def isStatic: Boolean = true
+
+    /** The Cozy scene. */
+    case Cozy extends Static(6, "Cozy")
+
+    /** The Warm White scene. */
+    case WarmWhite extends Static(11, "Warm White")
+
+    /** The Daylight scene. */
+    case Daylight extends Static(12, "Daylight")
+
+    /** The Cool White scene. */
+    case CoolWhite extends Static(13, "Cool White")
+
+    /** The Night Light scene. */
+    case NightLight extends Static(14, "Night Light")
+
+    /** The Focus scene. */
+    case Focus extends Static(15, "Focus")
+
+    /** The Relax scene. */
+    case Relax extends Static(16, "Relax")
+
+    /** The True Colors scene. */
+    case TrueColors extends Static(17, "True Colors")
+
+    /** The TV Time scene. */
+    case TVTime extends Static(18, "TV Time")
+
+    /** The Plant Growth scene. */
+    case PlantGrowth extends Static(19, "Plant Growth")
+
+    /** The White scene. */
+    case White extends Static(34, "White")
+
+    /** The Rhythm scene. */
+    case Rhythm extends Static(1000, "Rhythm")
+
+  /**
+   * Definitions associated with static scenes.
+   */
+  object Static:
+
+    /** The static scenes indexed by their IDs. */
+    private lazy val byId = values.map(scene => scene.id -> scene).toMap
+
+    /** The static scenes indexed by their names. */
+    private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
+
+    /**
+     * Returns the static scene with the specified ID.
+     *
+     * @param id The ID of the static scene to return.
+     * @return The static scene with the specified ID if it exists or fails if it does not.
+     */
+    def make(id: Int): Task[Static] =
+      valueBy(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid static scene ID: $id.")))(ZIO.succeed(_))
+
+    /**
+     * Returns the static scene with the specified name.
+     *
+     * @param name The name of the static scene to return.
+     * @return The static scene with the specified name if it exists or fails if it does not.
+     */
+    def make(name: String): Task[Static] =
+      valueBy(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid static scene name: $name.")))(ZIO.succeed(_))
+
+    /**
+     * Returns the static scene with the specified ID.
+     *
+     * @param id The ID of the static scene to return.
+     * @return The static scene with the specified ID if it exists.
+     */
+    def valueBy(id: Int): Option[Static] = byId.get(id)
+
+    /**
+     * Returns the static scene with the specified name.
+     *
+     * @param name The name of the static scene to return.
+     * @return The static scene with the specified name if it exists.
+     */
+    def valueBy(name: String): Option[Static] = byName.get(name.toLowerCase.trim)
+
+  /**
+   * Dynamic scenes that cycle through colors or change over time.
+   *
+   * @param id   The identifier of this dynamic scene.
+   * @param name The name of this dynamic scene.
+   */
+  enum Dynamic(val id: Int, val name: String) extends Scene:
+
+    /* False because this is a dynamic scene. */
+    override def isStatic: Boolean = false
+
+    /** The Ocean scene. */
+    case Ocean extends Dynamic(1, "Ocean")
+
+    /** The Romance scene. */
+    case Romance extends Dynamic(2, "Romance")
+
+    /** The Sunset scene. */
+    case Sunset extends Dynamic(3, "Sunset")
+
+    /** The Party scene. */
+    case Party extends Dynamic(4, "Party")
+
+    /** The Fireplace scene. */
+    case Fireplace extends Dynamic(5, "Fireplace")
+
+    /** The Forest scene. */
+    case Forest extends Dynamic(7, "Forest")
+
+    /** The Pastel Colors scene. */
+    case PastelColors extends Dynamic(8, "Pastel Colors")
+
+    /** The Wake-Up scene. */
+    case WakeUp extends Dynamic(9, "Wake-Up")
+
+    /** The Bedtime scene. */
+    case Bedtime extends Dynamic(10, "Bedtime")
+
+    /** The Spring scene. */
+    case Spring extends Dynamic(20, "Spring")
+
+    /** The Summer scene. */
+    case Summer extends Dynamic(21, "Summer")
+
+    /** The Fall scene. */
+    case Fall extends Dynamic(22, "Fall")
+
+    /** The Deep Dive scene. */
+    case DeepDive extends Dynamic(23, "Deep Dive")
+
+    /** The Jungle scene. */
+    case Jungle extends Dynamic(24, "Jungle")
+
+    /** The Mojito scene. */
+    case Mojito extends Dynamic(25, "Mojito")
+
+    /** The Club scene. */
+    case Club extends Dynamic(26, "Club")
+
+    /** The Christmas scene. */
+    case Christmas extends Dynamic(27, "Christmas")
+
+    /** The Halloween scene. */
+    case Halloween extends Dynamic(28, "Halloween")
+
+    /** The Candlelight scene. */
+    case Candlelight extends Dynamic(29, "Candlelight")
+
+    /** The Golden White scene. */
+    case GoldenWhite extends Dynamic(30, "Golden White")
+
+    /** The Pulse scene. */
+    case Pulse extends Dynamic(31, "Pulse")
+
+    /** The Steampunk scene. */
+    case Steampunk extends Dynamic(32, "Steampunk")
+
+    /** The Diwali scene. */
+    case Diwali extends Dynamic(33, "Diwali")
+
+    /** The Alarm scene. */
+    case Alarm extends Dynamic(35, "Alarm")
+
+    /** The Snowy Sky scene. */
+    case SnowySky extends Dynamic(36, "Snowy Sky")
+
+    /** The User 1 scene. */
+    case User1 extends Dynamic(256, "User 1")
+
+    /** The User 2 scene. */
+    case User2 extends Dynamic(257, "User 2")
+
+    /** The User 3 scene. */
+    case User3 extends Dynamic(258, "User 3")
+
+    /** The User 4 scene. */
+    case User4 extends Dynamic(259, "User 4")
+
+    /** The User 5 scene. */
+    case User5 extends Dynamic(260, "User 5")
+
+    /** The User 6 scene. */
+    case User6 extends Dynamic(261, "User 6")
+
+    /** The User 7 scene. */
+    case User7 extends Dynamic(262, "User 7")
+
+    /** The User 8 scene. */
+    case User8 extends Dynamic(263, "User 8")
+
+    /** The User 9 scene. */
+    case User9 extends Dynamic(264, "User 9")
+
+    /** The User 10 scene. */
+    case User10 extends Dynamic(265, "User 10")
+
+  /**
+   * Definitions associated with dynamic scenes.
+   */
+  object Dynamic:
+
+    /** The dynamic scenes indexed by their IDs. */
+    private lazy val byId = values.map(scene => scene.id -> scene).toMap
+
+    /** The dynamic scenes indexed by their names. */
+    private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
+
+    /**
+     * Returns the dynamic scene with the specified ID.
+     *
+     * @param id The ID of the dynamic scene to return.
+     * @return The dynamic scene with the specified ID if it exists or fails if it does not.
+     */
+    def make(id: Int): Task[Dynamic] =
+      valueBy(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid dynamic scene ID: $id.")))(ZIO.succeed(_))
+
+    /**
+     * Returns the dynamic scene with the specified name.
+     *
+     * @param name The name of the dynamic scene to return.
+     * @return The dynamic scene with the specified name if it exists or fails if it does not.
+     */
+    def make(name: String): Task[Dynamic] =
+      valueBy(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid dynamic scene name: $name.")))(ZIO.succeed(_))
+
+    /**
+     * Returns the dynamic scene with the specified ID.
+     *
+     * @param id The ID of the dynamic scene to return.
+     * @return The dynamic scene with the specified ID if it exists.
+     */
+    def valueBy(id: Int): Option[Dynamic] = byId.get(id)
+
+    /**
+     * Returns the dynamic scene with the specified name.
+     *
+     * @param name The name of the dynamic scene to return.
+     * @return The dynamic scene with the specified name if it exists.
+     */
+    def valueBy(name: String): Option[Dynamic] = byName.get(name.toLowerCase.trim)

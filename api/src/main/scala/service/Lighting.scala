@@ -17,186 +17,192 @@
 package net.wayfarerx.wizlights
 package service
 
-import cats.data.NonEmptySet
+import scala.annotation.targetName
 
 import zio.stream.UStream
 import zio.{Scope, UIO, URIO}
 
-import model.{Address, Light, Status}
+import model.{Address, Brightness, Color, Light, Scene, Source, Speed, Status, Temperature}
 
 /**
- * A service that interacts with configured lights.
+ * A service that interacts with available lights.
  */
 trait Lighting:
 
   /** Returns the lights managed by this service. */
-  def lights: UIO[NonEmptySet[Light]]
+  def lights: UIO[Set[Light]]
 
   /**
-   * Returns the light with the specified key.
+   * Returns the light with the specified address.
    *
-   * @tparam Key The type of key to use.
-   * @param key The key of the light to return.
-   * @return The light with the specified key.
+   * @param address The address of the light to return.
+   * @return The light with the specified address.
    */
-  def get[Key: Lighting.Key](key: Key): UIO[Option[Light]]
+  def get(address: Address): UIO[Light]
 
   /**
-   * Returns the lights with the specified keys.
-   *
-   * @tparam Key The type of key to use.
-   * @param keys The keys of the lights to return.
-   * @return The lights with the specified keys.
+   * Returns the lights with the specified addresses.
+   *\
+   * @param addresses The addresses of the lights to return.
+   * @return The lights with the specified addresses.
    */
-  def getAll[Key: Lighting.Key](keys: Iterable[Key]): UIO[Set[Light]]
+  def getAll(addresses: Iterable[Address]): UIO[Set[Light]]
 
   /**
-   * Updates the status of the light with the specified key.
+   * Updates the enabled state of the light at the specified address.
    *
-   * @tparam Key   The type of key to use.
-   * @param key    The key of the light to set the status of.
-   * @param status The status to set on the light with the specified key.
-   * @return True if a light with the specified key was updated.
+   * @param address The address of the light to update.
+   * @param enabled True to enable the light, false to disable it.
+   * @return True if a light was found and updated.
    */
-  def update[Key: Lighting.Key](key: Key, status: Status): UIO[Boolean]
+  def update(address: Address, enabled: Boolean): UIO[Boolean]
 
   /**
-   * Updates the status of the lights with the specified keys.
+   * Updates the enabled state of the lights at the specified addresses.
    *
-   * @tparam Key The type of key to use.
-   * @param keys   The keys of the lights to set the status of.
-   * @param status The status to set on the lights with the specified keys.
-   * @return The number of lights with the specified keys that were updated.
+   * @param addresses The addresses of the lights to update.
+   * @param enabled   True to enable the lights, false to disable them.
+   * @return The number of lights found and updated.
    */
-  def updateAll[Key: Lighting.Key](keys: Iterable[Key], status: Status): UIO[Int]
+  def updateAll(addresses: Iterable[Address], enabled: Boolean): UIO[Int]
+
+  /**
+   * Updates the brightness of the light at the specified address.
+   *
+   * @param address    The address of the light to update.
+   * @param brightness The brightness to set the light to.
+   * @return True if a light was found and updated.
+   */
+  @targetName("updateBrightness")
+  def update(address: Address, brightness: Brightness): UIO[Boolean]
+
+  /**
+   * Updates the brightness of the lights at the specified addresses.
+   *
+   * @param addresses  The addresses of the lights to update.
+   * @param brightness The brightness to set the lights to.
+   * @return The number of lights found and updated.
+   */
+  @targetName("updateAllBrightness")
+  def updateAll(addresses: Iterable[Address], brightness: Brightness): UIO[Int]
+
+  /**
+   * Updates the color temperature of the light at the specified address.
+   *
+   * @param address     The address of the light to update.
+   * @param temperature The color temperature to set the light to.
+   * @return True if a light was found and updated.
+   */
+  @targetName("updateTemperature")
+  def update(address: Address, temperature: Temperature): UIO[Boolean]
+
+  /**
+   * Updates the color temperature of the lights at the specified addresses.
+   *
+   * @param addresses   The addresses of the lights to update.
+   * @param temperature The color temperature to set the lights to.
+   * @return The number of lights found and updated.
+   */
+  @targetName("updateAllTemperature")
+  def updateAll(addresses: Iterable[Address], temperature: Temperature): UIO[Int]
+
+  /**
+   * Updates the color of the light at the specified address.
+   *
+   * @param address The address of the light to update.
+   * @param color   The color to set the light to.
+   * @return True if a light was found and updated.
+   */
+  def update(address: Address, color: Color): UIO[Boolean]
+
+  /**
+   * Updates the color of the lights at the specified addresses.
+   *
+   * @param addresses The addresses of the lights to update.
+   * @param color     The color to set the lights to.
+   * @return The number of lights found and updated.
+   */
+  def updateAll(addresses: Iterable[Address], color: Color): UIO[Int]
+
+  /**
+   * Updates the scene of the light at the specified address.
+   *
+   * @param address The address of the light to update.
+   * @param scene   The scene to set the light to.
+   * @return True if a light was found and updated.
+   */
+  def update(address: Address, scene: Scene): UIO[Boolean]
+
+  /**
+   * Updates the scene of the lights at the specified addresses.
+   *
+   * @param addresses The addresses of the lights to update.
+   * @param scene     The scene to set the lights to.
+   * @return The number of lights found and updated.
+   */
+  def updateAll(addresses: Iterable[Address], scene: Scene): UIO[Int]
+
+  /**
+   * Updates the dynamic scene and speed of the light at the specified address.
+   *
+   * @param address The address of the light to update.
+   * @param scene   The dynamic scene to set the light to.
+   * @param speed   The speed to set the dynamic scene to.
+   * @return True if a light was found and updated.
+   */
+  def update(address: Address, scene: Scene.Dynamic, speed: Speed): UIO[Boolean]
+
+  /**
+   * Updates the dynamic scene and speed of the lights at the specified addresses.
+   *
+   * @param addresses The addresses of the lights to update.
+   * @param scene     The dynamic scene to set the lights to.
+   * @param speed     The speed to set the dynamic scene to.
+   * @return The number of lights found and updated.
+   */
+  def updateAll(addresses: Iterable[Address], scene: Scene.Dynamic, speed: Speed): UIO[Int]
+
+  /**
+   * Updates the dynamic scene speed of the light at the specified address.
+   *
+   * @param address The address of the light to update.
+   * @param speed   The speed to set the dynamic scene to.
+   * @return True if a light was found and updated.
+   */
+  @targetName("updateSpeed")
+  def update(address: Address, speed: Speed): UIO[Boolean]
+
+  /**
+   * Updates the dynamic scene speed of the lights at the specified addresses.
+   *
+   * @param addresses The addresses of the lights to update.
+   * @param speed     The speed to set the dynamic scene to.
+   * @return The number of lights found and updated.
+   */
+  @targetName("updateAllSpeed")
+  def updateAll(addresses: Iterable[Address], speed: Speed): UIO[Int]
+
+  /**
+   * Updates the state of the light at the specified address.
+   *
+   * @param address The address of the light to update.
+   * @param status  The status to set the light to.
+   * @return True if a light was found and updated.
+   */
+  def update(address: Address, status: Status): UIO[Boolean]
+
+  /**
+   * Updates the status of the lights at the specified addresses.
+   *
+   * @param addresses The addresses of the lights to update.
+   * @param status    The status to set the lights to.
+   * @return The number of lights were found and updated.
+   */
+  def updateAll(addresses: Iterable[Address], status: Status): UIO[Int]
 
   /**
    * Subscribes to events from this service.
    *
-   * @return A stream of light states published by this service bound to the required scope.
+   * @return A stream of events published by this service.
    */
-  def subscribe: URIO[Scope, UStream[Light]]
-
-/**
- * Definitions associated with lighting services.
- */
-object Lighting:
-
-  /** Represents types that serve as keys for the lighting service. */
-  sealed trait Key[T]:
-
-    /**
-     * Applies a visitor to a key.
-     *
-     * @tparam U The type returned by the visitor.
-     * @param key The key to visit.
-     * @param visitor The visitor to apply.
-     * @return The result returned by the visitor.
-     */
-    def apply[U](key: T, visitor: Key.Visitor[U]): UIO[Option[U]]
-
-    /**
-     * Applies a visitor to a collection of keys.
-     *
-     * @tparam U The type returned by the visitor.
-     * @param keys The keys to visit.
-     * @param visitor The visitor to apply.
-     * @return The result returned by the visitor.
-     */
-    def apply[U](keys: Iterable[T], visitor: Key.Visitor[U]): UIO[List[U]]
-
-  /**
-   * Definitions of the types that serve as keys for the lighting service.
-   */
-  object Key:
-
-    /** Names can be used as keys for the lighting service. */
-    given Key[String] = Names
-
-    /** Addresses can be used as keys for the lighting service. */
-    given Key[Address] = Addresses
-
-    /**
-     * Names can be used as keys for the lighting service.
-     */
-    case object Names extends Key[String]:
-
-      /* Apply a visitor to a key. */
-      override def apply[U](key: String, visitor: Visitor[U]): UIO[Option[U]] =
-        visitor.onName(key)
-
-      /* Apply a visitor to a collection of keys. */
-      override def apply[U](keys: Iterable[String], visitor: Visitor[U]): UIO[List[U]] =
-        visitor.onNames(keys)
-
-    /**
-     * Addresses can be used as keys for the lighting service.
-     */
-    case object Addresses extends Key[Address]:
-
-      /* Apply a visitor to a key. */
-      override def apply[U](key: Address, visitor: Visitor[U]): UIO[Option[U]] =
-        visitor.onAddress(key)
-
-      /* Apply a visitor to a collection of keys. */
-      override def apply[U](keys: Iterable[Address], visitor: Visitor[U]): UIO[List[U]] =
-        visitor.onAddresses(keys)
-
-    /**
-     * A visitor for key types.
-     *
-     * @tparam T The type returned by this visitor.
-     */
-    trait Visitor[T]:
-
-      /**
-       * Applies this visitor to the specified key.
-       *
-       * @tparam Key The type of key to apply.
-       * @param key The key to apply.
-       * @return The result of applying this visitor to the specified key.
-       */
-      final def apply[Key: Lighting.Key](key: Key): UIO[Option[T]] =
-        summon[Lighting.Key[Key]].apply(key, this)
-
-      /**
-       * Applies this visitor to the specified keys.
-       *
-       * @tparam Key The type of keys to apply.
-       * @param keys The keys to apply.
-       * @return The result of applying this visitor to the specified keys.
-       */
-      final def apply[Key: Lighting.Key](keys: Iterable[Key]): UIO[List[T]] =
-        summon[Lighting.Key[Key]].apply(keys, this)
-
-      /**
-       * Called when the key type is a name.
-       *
-       * @param name The name to visit.
-       * @return The result of this visitor.
-       */
-      def onName(name: String): UIO[Option[T]]
-
-      /**
-       * Called when the key type is a collection of names.
-       *
-       * @param names The names to visit.
-       * @return The result of this visitor.
-       */
-      def onNames(names: Iterable[String]): UIO[List[T]]
-
-      /**
-       * Called when the key type is a MAC address.
-       *
-       * @param address The MAC address to visit.
-       * @return The result of this visitor.
-       */
-      def onAddress(address: Address): UIO[Option[T]]
-
-      /**
-       * Called when the key type is a collection of MAC addresses.
-       *
-       * @param addresses The MAC addresses to visit.
-       * @return The result of this visitor.
-       */
-      def onAddresses(addresses: Iterable[Address]): UIO[List[T]]
+  def subscribe: URIO[Scope, UStream[(Light, Option[Source])]]

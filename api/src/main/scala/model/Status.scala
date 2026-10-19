@@ -28,9 +28,17 @@ sealed trait Status
 object Status:
 
   /**
-   * The light is powered but set to disabled.
+   * The light is disabled.
    */
   case object Disabled extends Status
+
+  /**
+   * The light is enabled.
+   */
+  sealed trait Enabled extends Status:
+
+    /** The brightness of the light. */
+    def brightness: Brightness
 
   /**
    * The light is set to pure white.
@@ -38,15 +46,47 @@ object Status:
    * @param temperature The temperature of the light.
    * @param brightness  The brightness of the light.
    */
-  case class White(temperature: Temperature, brightness: Brightness) extends Status
+  case class White(
+    temperature: Temperature,
+    brightness: Brightness
+  ) extends Enabled
 
   /**
    * The light is set to show a specific scene.
-   *
-   * @param scene       The scene the light is showing.
-   * @param brightness  The brightness of the light.
    */
-  case class Defined(scene: Scene, brightness: Brightness) extends Status
+  sealed trait Defined extends Enabled:
+
+    /** The scene the light is showing. */
+    def scene: Scene
+
+  /**
+   * The available implementations of defined statuses.
+   */
+  object Defined:
+
+    /**
+     * The light is set to a static scene.
+     *
+     * @param scene       The static scene the light is set to.
+     * @param brightness  The brightness of the light.
+     */
+    case class Static(
+      scene: Scene.Static,
+      brightness: Brightness
+    ) extends Defined
+
+    /**
+     * The light is set to a dynamic scene.
+     *
+     * @param scene       The dynamic scene the light is set to.
+     * @param speed       The speed the dynamic scene is set to.
+     * @param brightness  The brightness of the light.
+     */
+    case class Dynamic(
+      scene: Scene.Dynamic,
+      speed: Speed,
+      brightness: Brightness
+    ) extends Defined
 
   /**
    * The light is set to a custom color.
@@ -54,4 +94,7 @@ object Status:
    * @param color       The color of the light.
    * @param brightness  The brightness of the light.
    */
-  case class Custom(color: Color, brightness: Brightness) extends Status
+  case class Custom(
+    color: Color,
+    brightness: Brightness
+  ) extends Enabled

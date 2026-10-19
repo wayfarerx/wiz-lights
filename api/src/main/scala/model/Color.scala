@@ -25,8 +25,16 @@ import zio.{Task, ZIO}
  * @param red   The red color component in the range 0 - 255.
  * @param green The green color component in the range 0 - 255.
  * @param blue  The blue color component in the range 0 - 255.
+ * @param cool  The cool white color component in the range 0 - 255.
+ * @param warm  The warm white color component in the range 0 - 255.
  */
-case class Color private(red: Int, green: Int, blue: Int)
+case class Color private(
+  red: Int,
+  green: Int,
+  blue: Int,
+  cool: Int = 0,
+  warm: Int = 0
+)
 
 /**
  * Factory for light colors.
@@ -87,14 +95,18 @@ object Color:
    * @param red   The red color component in the range 0 - 255.
    * @param green The green color component in the range 0 - 255.
    * @param blue  The blue color component in the range 0 - 255.
+   * @param cool  The cool white color component in the range 0 - 255.
+   * @param warm  The warm white color component in the range 0 - 255.
    * @return The new color definition if all the color components are valid.
    */
-  def make(red: Int, green: Int, blue: Int): Task[Color] = for
-    (r, g, b) <-
+  def make(red: Int, green: Int, blue: Int, cool: Int = 0, warm: Int = 0): Task[Color] = for
+    (r, g, b, c, w) <-
       validComponent("red", red) validate
         validComponent("green", green) validate
-        validComponent("blue", blue)
-  yield Color(r, g, b)
+        validComponent("blue", blue) validate
+        validComponent("cool", cool) validate
+        validComponent("warm", warm)
+  yield Color(r, g, b, c, w)
 
   /**
    * Validates a color component.

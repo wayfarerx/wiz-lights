@@ -28,9 +28,9 @@ object BrightnessSpec extends ZIOSpecDefault:
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("BrightnessSpec")(
     test("predefined brightness constants") {
       assertTrue(
-        Brightness.Dimmest.value == 10,
-        Brightness.Brightest.value == 100,
-        Brightness.Medium.value == 55
+        (Brightness.Dimmest: Int) == 10,
+        (Brightness.Brightest: Int) == 100,
+        (Brightness.Medium: Int) == 55
       )
     },
     test("successfully create valid brightness values") {
@@ -43,7 +43,7 @@ object BrightnessSpec extends ZIOSpecDefault:
         dimmest == Brightness.Dimmest,
         medium == Brightness.Medium,
         brightest == Brightness.Brightest,
-        custom.value == 75
+        (custom: Int) == 75
       )
     },
     test("fail when brightness is out of range") {

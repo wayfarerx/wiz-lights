@@ -24,12 +24,16 @@ import zio.{Task, ZIO}
 /**
  * The configuration properties for the backend.
  *
+ * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
+ * @param incomingWindow    The number of incoming responses to keep in the network hub.
  * @param commandPort       The network port to send commands on.
  * @param listenerPort      The network port to also listen on.
  * @param discoveryInterval The frequency of broadcast discovery attempts.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  */
 case class Configuration private(
+  outgoingWindow: Int,
+  incomingWindow: Int,
   commandPort: Int,
   listenerPort: Int,
   discoveryInterval: FiniteDuration,
@@ -40,6 +44,12 @@ case class Configuration private(
  * Factory for backend configurations.
  */
 object Configuration:
+
+  /** The default number of outgoing requests to keep in the network queue. */
+  val DefaultOutgoingWindow: Int = 50
+
+  /** The default number of incoming responses to keep in the network hub. */
+  val DefaultIncomingWindow: Int = 100
 
   /** The default network port to send commands on. */
   val DefaultCommandPort: Int = 38899
@@ -56,6 +66,8 @@ object Configuration:
   /**
    * Creates a new backend configuration.
    *
+   * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
+   * @param incomingWindow    The number of incoming responses to keep in the network hub.
    * @param commandPort       The network port to send commands on.
    * @param listenerPort      The network port to listen on.
    * @param discoveryInterval The frequency of broadcast discovery attempts.
@@ -63,6 +75,8 @@ object Configuration:
    * @return A new backend configuration.
    */
   def make(
+    outgoingWindow: Int = DefaultOutgoingWindow,
+    incomingWindow: Int = DefaultIncomingWindow,
     commandPort: Int = DefaultCommandPort,
     listenerPort: Int = DefaultListenerPort,
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
@@ -71,8 +85,9 @@ object Configuration:
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
       validDiscoveryInterval(discoveryInterval) validate
-      validRetryBackoffs(retryBackoffs) map
-      (_ => Configuration(commandPort, listenerPort, discoveryInterval, retryBackoffs.toList))
+      validRetryBackoffs(retryBackoffs) map { _ =>
+      Configuration(outgoingWindow, incomingWindow, commandPort, listenerPort, discoveryInterval, retryBackoffs.toList)
+    }
 
   /**
    * Validates that the network port is a valid IP port.

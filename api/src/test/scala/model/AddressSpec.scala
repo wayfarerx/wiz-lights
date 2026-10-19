@@ -33,9 +33,9 @@ object AddressSpec extends ZIOSpecDefault:
         address2 <- Address.make("A1B2C3D4E5F6")
         address3 <- Address.make("  0123456789ab  ")
       yield assertTrue(
-        address1 == "0123456789ab",
-        address2 == "a1b2c3d4e5f6",
-        address3 == "0123456789ab"
+        (address1: String) == "0123456789ab",
+        (address2: String) == "a1b2c3d4e5f6",
+        (address3: String) == "0123456789ab"
       )
     },
     test("fail on empty or blank MAC address") {

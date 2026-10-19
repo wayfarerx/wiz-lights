@@ -35,7 +35,7 @@ import zio.stream.{UStream, ZStream}
  * @param outgoing The queue of outgoing messages.
  * @param incoming The hub of incoming messages.
  */
-final class Network private(outgoing: Queue[Outgoing], incoming: Hub[Incoming]):
+final class Network private[backend](outgoing: Queue[Outgoing], incoming: Hub[Incoming]):
 
   /**
    * Publishes a command message on the command port.
@@ -61,29 +61,43 @@ object Network:
 
   /** The default broadcast addresses. */
   private val DefaultBroadcastAddresses =
-    ZIO.attempt(Set(InetAddress.ofLiteral("255.255.255.255"))).orDie.memoize.flatten
+    ZIO.attempt(Set(InetAddress.ofLiteral("255.255.255.255"))).memoize.flatten
 
   /** The layer that provides the default network service. */
   val layer: RLayer[Configuration, Network] = ZLayer.scoped {
     for
       config <- ZIO.service[Configuration]
-      network <- make(config.commandPort, config.listenerPort, config.discoveryInterval)
+      network <- make(
+        config.outgoingWindow,
+        config.incomingWindow,
+        config.commandPort,
+        config.listenerPort,
+        config.discoveryInterval
+      )
     yield network
   }
 
   /**
    * Creates a live network representation.
    *
+   * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
+   * @param incomingWindow    The number of incoming responses to keep in the network hub.
    * @param commandPort       The network port to send commands on.
    * @param listenerPort      The network port to also listen on.
    * @param discoveryInterval The interval to wait between discovering devices.
    * @return A live network representation.
    */
-  def make(commandPort: Int, listenerPort: Int, discoveryInterval: FiniteDuration): RIO[Scope, Network] =
+  def make(
+    outgoingWindow: Int,
+    incomingWindow: Int,
+    commandPort: Int,
+    listenerPort: Int,
+    discoveryInterval: FiniteDuration
+  ): RIO[Scope, Network] =
     for
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
-      outgoing <- Queue.unbounded[Outgoing]
-      incoming <- Hub.unbounded[Incoming]
+      outgoing <- Queue.sliding[Outgoing](outgoingWindow)
+      incoming <- Hub.sliding[Incoming](incomingWindow)
       received = incoming.publish(_: Incoming).ignore
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
@@ -124,7 +138,9 @@ object Network:
     }
     interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
     broadcastAddresses <- interfaceAddresses.flatMap(Option apply _.getBroadcast) match
-      case Nil => DefaultBroadcastAddresses
+      case Nil => DefaultBroadcastAddresses.catchAllCause {
+        ZIO.logWarningCause("Cannot find any broadcast addresses.", _) map (_ => Set.empty)
+      }
       case some => ZIO.succeed(some.toSet)
     _ <- broadcastAddressesRef.set(broadcastAddresses)
   yield ()

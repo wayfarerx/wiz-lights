@@ -19,12 +19,8 @@ package model
 
 import zio.{Task, ZIO}
 
-/**
- * A temperature value for white lights.
- *
- * @param value The temperature value in kelvin of the light in the range 2,200 - 6,500.
- */
-case class Temperature private(value: Int)
+/** A temperature value for white lights in the range 2,200 - 6,500. */
+opaque type Temperature <: Int = Int
 
 /**
  * Factory for white light temperature values.
@@ -32,13 +28,13 @@ case class Temperature private(value: Int)
 object Temperature:
 
   /** The warmest possible temperature. */
-  val Warmest = Temperature(2200)
+  val Warmest: Temperature = 2200
 
   /** The coolest possible temperature. */
-  val Coolest = Temperature(6500)
+  val Coolest: Temperature = 6500
 
   /** The midpoint between the warmest and coolest temperatures. */
-  val Medium = Temperature((Coolest.value - Warmest.value) / 2 + Warmest.value)
+  val Medium: Temperature = (Coolest - Warmest) / 2 + Warmest
 
   /**
    * Creates a new white light temperature definition.
@@ -47,7 +43,7 @@ object Temperature:
    * @return The new white light temperature definition if the value is valid.
    */
   def make(value: Int): Task[Temperature] =
-    if value >= Warmest.value && value <= Coolest.value then ZIO.succeed(Temperature(value)) else
+    if value >= Warmest && value <= Coolest then ZIO.succeed(value) else
       ZIO.fail(IllegalArgumentException(
-        s"Invalid temperature value: $value. Must be between ${Warmest.value} and ${Coolest.value}."
+        s"Invalid temperature value: $value. Must be between $Warmest and $Coolest."
       ))

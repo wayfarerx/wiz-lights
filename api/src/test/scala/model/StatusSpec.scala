@@ -40,20 +40,40 @@ object StatusSpec extends ZIOSpecDefault:
         brightness <- Brightness.make(80)
       yield
         val status: Status = Status.White(temperature, brightness)
+        val enabled: Status.Enabled = status.asInstanceOf[Status.Enabled]
         assertTrue(
+          enabled.brightness == brightness,
           status match
             case Status.White(t, b) => t == temperature && b == brightness
             case _ => false
         )
     },
-    test("support Defined status") {
+    test("support Defined.Static status") {
       for
         brightness <- Brightness.make(90)
       yield
-        val status: Status = Status.Defined(Scene.Ocean, brightness)
+        val status: Status = Status.Defined.Static(Scene.Rhythm, brightness)
+        val defined: Status.Defined = status.asInstanceOf[Status.Defined]
         assertTrue(
+          defined.scene == Scene.Rhythm,
+          defined.brightness == brightness,
           status match
-            case Status.Defined(s, b) => s == Scene.Ocean && b == brightness
+            case Status.Defined.Static(s, b) => s == Scene.Rhythm && b == brightness
+            case _ => false
+        )
+    },
+    test("support Defined.Dynamic status") {
+      for
+        speed <- Speed.make(120)
+        brightness <- Brightness.make(85)
+      yield
+        val status: Status = Status.Defined.Dynamic(Scene.Ocean, speed, brightness)
+        val defined: Status.Defined = status.asInstanceOf[Status.Defined]
+        assertTrue(
+          defined.scene == Scene.Ocean,
+          defined.brightness == brightness,
+          status match
+            case Status.Defined.Dynamic(s, sp, b) => s == Scene.Ocean && sp == speed && b == brightness
             case _ => false
         )
     },
@@ -63,7 +83,9 @@ object StatusSpec extends ZIOSpecDefault:
         brightness <- Brightness.make(100)
       yield
         val status: Status = Status.Custom(color, brightness)
+        val enabled: Status.Enabled = status.asInstanceOf[Status.Enabled]
         assertTrue(
+          enabled.brightness == brightness,
           status match
             case Status.Custom(c, b) => c == color && b == brightness
             case _ => false

@@ -28,9 +28,9 @@ object TemperatureSpec extends ZIOSpecDefault:
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("TemperatureSpec")(
     test("predefined temperature constants") {
       assertTrue(
-        Temperature.Warmest.value == 2200,
-        Temperature.Coolest.value == 6500,
-        Temperature.Medium.value == 4350
+        (Temperature.Warmest: Int) == 2200,
+        (Temperature.Coolest: Int) == 6500,
+        (Temperature.Medium: Int) == (6500 - 2200) / 2 + 2200
       )
     },
     test("successfully create valid temperature values") {
@@ -43,7 +43,7 @@ object TemperatureSpec extends ZIOSpecDefault:
         warmest == Temperature.Warmest,
         medium == Temperature.Medium,
         coolest == Temperature.Coolest,
-        custom.value == 3000
+        (custom: Int) == 3000
       )
     },
     test("fail when temperature is out of range") {
