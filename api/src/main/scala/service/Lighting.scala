@@ -22,7 +22,7 @@ import scala.annotation.targetName
 import zio.stream.UStream
 import zio.{Scope, UIO, URIO}
 
-import model.{Address, Brightness, Color, Light, Scene, Source, Speed, Status, Temperature}
+import model.*
 
 /**
  * A service that interacts with available lights.
@@ -42,7 +42,7 @@ trait Lighting:
 
   /**
    * Returns the lights with the specified addresses.
-   *\
+   *
    * @param addresses The addresses of the lights to return.
    * @return The lights with the specified addresses.
    */
@@ -199,6 +199,40 @@ trait Lighting:
    * @return The number of lights were found and updated.
    */
   def updateAll(addresses: Iterable[Address], status: Status): UIO[Int]
+
+  /**
+   * Updates the light at the specified address using the specified update.
+   *
+   * @param address The address of the light to update.
+   * @param update  The update to apply to the light.
+   * @return True if a light was found and updated.
+   */
+  final def update(address: Address, update: Update): UIO[Boolean] = update match
+    case Update.Enabled(enabled) => this.update(address, enabled)
+    case Update.Brightness(brightness) => this.update(address, brightness)
+    case Update.Temperature(temperature) => this.update(address, temperature)
+    case Update.Color(color) => this.update(address, color)
+    case Update.Static(scene) => this.update(address, scene)
+    case Update.Dynamic(scene, speed) => this.update(address, scene, speed)
+    case Update.Speed(speed) => this.update(address, speed)
+    case Update.Status(status) => this.update(address, status)
+
+  /**
+   * Updates the lights at the specified addresses using the specified update.
+   *
+   * @param addresses The addresses of the lights to update.
+   * @param update    The update to apply to the lights.
+   * @return The number of lights found and updated.
+   */
+  final def updateAll(addresses: Iterable[Address], update: Update): UIO[Int] = update match
+    case Update.Enabled(enabled) => this.updateAll(addresses, enabled)
+    case Update.Brightness(brightness) => this.updateAll(addresses, brightness)
+    case Update.Temperature(temperature) => this.updateAll(addresses, temperature)
+    case Update.Color(color) => this.updateAll(addresses, color)
+    case Update.Static(scene) => this.updateAll(addresses, scene)
+    case Update.Dynamic(scene, speed) => this.updateAll(addresses, scene, speed)
+    case Update.Speed(speed) => this.updateAll(addresses, speed)
+    case Update.Status(status) => this.updateAll(addresses, status)
 
   /**
    * Subscribes to events from this service.
