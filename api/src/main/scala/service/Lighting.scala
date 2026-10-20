@@ -183,7 +183,7 @@ trait Lighting:
   def updateAll(addresses: Iterable[Address], speed: Speed): UIO[Int]
 
   /**
-   * Updates the state of the light at the specified address.
+   * Updates the status of the light at the specified address.
    *
    * @param address The address of the light to update.
    * @param status  The status to set the light to.
@@ -192,7 +192,7 @@ trait Lighting:
   def update(address: Address, status: Status): UIO[Boolean]
 
   /**
-   * Updates the status of the lights at the specified addresses.
+   * Updates the statuses of the lights at the specified addresses.
    *
    * @param addresses The addresses of the lights to update.
    * @param status    The status to set the lights to.
