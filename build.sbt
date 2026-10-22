@@ -30,21 +30,26 @@ lazy val ZioHttp = "dev.zio" %% "zio-http" % zioHttpVersion
 /**
  * The project that defines the API.
  */
-lazy val api = (project in file("api"))
+lazy val api = crossProject(JSPlatform, JVMPlatform)
+  .crossType(CrossType.Pure)
+  .in(file("api"))
   .settings(
     name := "wiz-lights-api",
     libraryDependencies ++= Seq(
-      CatsCore,
-      CirceCore,
-      Zio,
-      ZioStreams,
-      ZioTest,
-      ZioTestSbt,
-      ZioTestMagnolia
+      "org.typelevel" %%% "cats-core" % catsVersion,
+      "io.circe" %%% "circe-core" % circeVersion,
+      "dev.zio" %%% "zio" % zioVersion,
+      "dev.zio" %%% "zio-streams" % zioVersion,
+      "dev.zio" %%% "zio-test" % zioVersion % Test,
+      "dev.zio" %%% "zio-test-sbt" % zioVersion % Test,
+      "dev.zio" %%% "zio-test-magnolia" % zioVersion % Test
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     idePackagePrefix := Some("net.wayfarerx.wizlights")
   )
+
+lazy val apiJVM = api.jvm
+lazy val apiJS = api.js
 
 /**
  * The project that defines the backend services.
@@ -69,7 +74,7 @@ lazy val backend = (project in file("backend"))
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
     idePackagePrefix := Some("net.wayfarerx.wizlights.backend")
   )
-  .dependsOn(api)
+  .dependsOn(apiJVM)
 
 /**
  * The project that defines the server.
@@ -103,5 +108,6 @@ lazy val root = (project in file("."))
   .settings(
     name := "wiz-lights",
     publish / skip := true
-  ).aggregate(api, backend, server)
+  ).aggregate(apiJVM, apiJS, backend, server)
+
 
