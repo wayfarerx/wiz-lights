@@ -57,7 +57,7 @@ object Signal:
   /**
    * Creates a new light signal strength definition.
    *
-   * @param value The signal strength value of the light in the range -90 - -30.
+   * @param value The signal strength value of the light in the range -95 - -20.
    * @return The new light signal strength definition if the value is valid.
    */
   def make(value: Int): IO[IllegalArgumentException, Signal] =

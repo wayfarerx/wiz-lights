@@ -100,8 +100,19 @@ object Status:
    */
   sealed trait Enabled extends Status:
 
+    /** The type of this enabled status. */
+    type EnabledType <: Enabled
+
     /** The brightness of the light. */
     def brightness: Brightness
+
+    /**
+     * Creates a copy of this enabled status with the specified brightness.
+     *
+     * @param brightness The new brightness value.
+     * @return A copy of this enabled status with the specified brightness.
+     */
+    def withBrightness(brightness: Brightness): EnabledType
 
   /**
    * Definitions associated with enabled light statuses.
@@ -147,7 +158,13 @@ object Status:
   case class White(
     temperature: Temperature,
     brightness: Brightness
-  ) extends Enabled
+  ) extends Enabled:
+
+    /* The type of this white status. */
+    override type EnabledType = White
+
+    /* Create a copy of this white status with the specified brightness. */
+    override def withBrightness(brightness: Brightness): White = copy(brightness = brightness)
 
   /**
    * Definitions associated with white statuses.
@@ -166,6 +183,9 @@ object Status:
    * The light is set to show a specific scene.
    */
   sealed trait Defined extends Enabled:
+
+    /* The type of defined statuses. */
+    override type EnabledType <: Defined
 
     /** The scene the light is showing. */
     def scene: Scene
@@ -204,7 +224,13 @@ object Status:
     case class Static(
       scene: Scene.Static,
       brightness: Brightness
-    ) extends Defined
+    ) extends Defined:
+
+      /* The type of this static status. */
+      override type EnabledType = Static
+
+      /* Create a copy of this static status with the specified brightness. */
+      override def withBrightness(brightness: Brightness): Static = copy(brightness = brightness)
 
     /**
      * Definitions associated with static defined statuses.
@@ -230,7 +256,13 @@ object Status:
       scene: Scene.Dynamic,
       speed: Speed,
       brightness: Brightness
-    ) extends Defined
+    ) extends Defined:
+
+      /* The type of this dynamic status. */
+      override type EnabledType = Dynamic
+
+      /* Create a copy of this dynamic status with the specified brightness. */
+      override def withBrightness(brightness: Brightness): Dynamic = copy(brightness = brightness)
 
     /**
      * Definitions associated with dynamic defined statuses.
@@ -254,7 +286,13 @@ object Status:
   case class Custom(
     color: Color,
     brightness: Brightness
-  ) extends Enabled
+  ) extends Enabled:
+
+    /* The type of this custom status. */
+    override type EnabledType = Custom
+
+    /* Create a copy of this custom status with the specified brightness. */
+    override def withBrightness(brightness: Brightness): Custom = copy(brightness = brightness)
 
   /**
    * Definitions associated with custom statuses.

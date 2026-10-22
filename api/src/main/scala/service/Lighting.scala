@@ -33,206 +33,206 @@ trait Lighting:
   def lights: UIO[Set[Light]]
 
   /**
-   * Returns the light with the specified address.
+   * Returns the light with the specified MAC address.
    *
-   * @param address The address of the light to return.
-   * @return The light with the specified address.
+   * @param macAddress The MAC address of the light to return.
+   * @return The light with the specified MAC address.
    */
-  def get(address: Address): UIO[Light]
+  def get(macAddress: MacAddress): UIO[Light]
 
   /**
-   * Returns the lights with the specified addresses.
+   * Returns the lights with the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to return.
-   * @return The lights with the specified addresses.
+   * @param macAddresses The MAC addresses of the lights to return.
+   * @return The lights with the specified MAC addresses.
    */
-  def getAll(addresses: Iterable[Address]): UIO[Set[Light]]
+  def getAll(macAddresses: Iterable[MacAddress]): UIO[Set[Light]]
 
   /**
-   * Updates the enabled state of the light at the specified address.
+   * Updates the enabled state of the light at the specified MAC address.
    *
-   * @param address The address of the light to update.
-   * @param enabled True to enable the light, false to disable it.
+   * @param macAddress The MAC address of the light to update.
+   * @param enabled    True to enable the light, false to disable it.
    * @return True if a light was found and updated.
    */
-  def update(address: Address, enabled: Boolean): UIO[Boolean]
+  def update(macAddress: MacAddress, enabled: Boolean): UIO[Boolean]
 
   /**
-   * Updates the enabled state of the lights at the specified addresses.
+   * Updates the enabled state of the lights at the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param enabled   True to enable the lights, false to disable them.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param enabled      True to enable the lights, false to disable them.
    * @return The number of lights found and updated.
    */
-  def updateAll(addresses: Iterable[Address], enabled: Boolean): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], enabled: Boolean): UIO[Int]
 
   /**
-   * Updates the brightness of the light at the specified address.
+   * Updates the brightness of the light at the specified MAC address.
    *
-   * @param address    The address of the light to update.
+   * @param macAddress The MAC address of the light to update.
    * @param brightness The brightness to set the light to.
    * @return True if a light was found and updated.
    */
   @targetName("updateBrightness")
-  def update(address: Address, brightness: Brightness): UIO[Boolean]
+  def update(macAddress: MacAddress, brightness: Brightness): UIO[Boolean]
 
   /**
-   * Updates the brightness of the lights at the specified addresses.
+   * Updates the brightness of the lights at the specified MAC addresses.
    *
-   * @param addresses  The addresses of the lights to update.
-   * @param brightness The brightness to set the lights to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param brightness   The brightness to set the lights to.
    * @return The number of lights found and updated.
    */
   @targetName("updateAllBrightness")
-  def updateAll(addresses: Iterable[Address], brightness: Brightness): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], brightness: Brightness): UIO[Int]
 
   /**
-   * Updates the color temperature of the light at the specified address.
+   * Updates the color temperature of the light at the specified MAC address.
    *
-   * @param address     The address of the light to update.
+   * @param macAddress  The MAC address of the light to update.
    * @param temperature The color temperature to set the light to.
    * @return True if a light was found and updated.
    */
   @targetName("updateTemperature")
-  def update(address: Address, temperature: Temperature): UIO[Boolean]
+  def update(macAddress: MacAddress, temperature: Temperature): UIO[Boolean]
 
   /**
-   * Updates the color temperature of the lights at the specified addresses.
+   * Updates the color temperature of the lights at the specified MAC addresses.
    *
-   * @param addresses   The addresses of the lights to update.
-   * @param temperature The color temperature to set the lights to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param temperature  The color temperature to set the lights to.
    * @return The number of lights found and updated.
    */
   @targetName("updateAllTemperature")
-  def updateAll(addresses: Iterable[Address], temperature: Temperature): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], temperature: Temperature): UIO[Int]
 
   /**
-   * Updates the color of the light at the specified address.
+   * Updates the color of the light at the specified MAC address.
    *
-   * @param address The address of the light to update.
-   * @param color   The color to set the light to.
+   * @param macAddress The MAC address of the light to update.
+   * @param color      The color to set the light to.
    * @return True if a light was found and updated.
    */
-  def update(address: Address, color: Color): UIO[Boolean]
+  def update(macAddress: MacAddress, color: Color): UIO[Boolean]
 
   /**
-   * Updates the color of the lights at the specified addresses.
+   * Updates the color of the lights at the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param color     The color to set the lights to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param color        The color to set the lights to.
    * @return The number of lights found and updated.
    */
-  def updateAll(addresses: Iterable[Address], color: Color): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], color: Color): UIO[Int]
 
   /**
-   * Updates the scene of the light at the specified address.
+   * Updates the scene of the light at the specified MAC address.
    *
-   * @param address The address of the light to update.
-   * @param scene   The scene to set the light to.
+   * @param macAddress The MAC address of the light to update.
+   * @param scene      The scene to set the light to.
    * @return True if a light was found and updated.
    */
-  def update(address: Address, scene: Scene): UIO[Boolean]
+  def update(macAddress: MacAddress, scene: Scene): UIO[Boolean]
 
   /**
-   * Updates the scene of the lights at the specified addresses.
+   * Updates the scene of the lights at the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param scene     The scene to set the lights to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param scene        The scene to set the lights to.
    * @return The number of lights found and updated.
    */
-  def updateAll(addresses: Iterable[Address], scene: Scene): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], scene: Scene): UIO[Int]
 
   /**
-   * Updates the dynamic scene and speed of the light at the specified address.
+   * Updates the dynamic scene and speed of the light at the specified MAC address.
    *
-   * @param address The address of the light to update.
-   * @param scene   The dynamic scene to set the light to.
-   * @param speed   The speed to set the dynamic scene to.
+   * @param macAddress The MAC address of the light to update.
+   * @param scene      The dynamic scene to set the light to.
+   * @param speed      The speed to set the dynamic scene to.
    * @return True if a light was found and updated.
    */
-  def update(address: Address, scene: Scene.Dynamic, speed: Speed): UIO[Boolean]
+  def update(macAddress: MacAddress, scene: Scene.Dynamic, speed: Speed): UIO[Boolean]
 
   /**
-   * Updates the dynamic scene and speed of the lights at the specified addresses.
+   * Updates the dynamic scene and speed of the lights at the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param scene     The dynamic scene to set the lights to.
-   * @param speed     The speed to set the dynamic scene to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param scene        The dynamic scene to set the lights to.
+   * @param speed        The speed to set the dynamic scene to.
    * @return The number of lights found and updated.
    */
-  def updateAll(addresses: Iterable[Address], scene: Scene.Dynamic, speed: Speed): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], scene: Scene.Dynamic, speed: Speed): UIO[Int]
 
   /**
-   * Updates the dynamic scene speed of the light at the specified address.
+   * Updates the dynamic scene speed of the light at the specified MAC address.
    *
-   * @param address The address of the light to update.
-   * @param speed   The speed to set the dynamic scene to.
+   * @param macAddress The MAC address of the light to update.
+   * @param speed      The speed to set the dynamic scene to.
    * @return True if a light was found and updated.
    */
   @targetName("updateSpeed")
-  def update(address: Address, speed: Speed): UIO[Boolean]
+  def update(macAddress: MacAddress, speed: Speed): UIO[Boolean]
 
   /**
-   * Updates the dynamic scene speed of the lights at the specified addresses.
+   * Updates the dynamic scene speed of the lights at the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param speed     The speed to set the dynamic scene to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param speed        The speed to set the dynamic scene to.
    * @return The number of lights found and updated.
    */
   @targetName("updateAllSpeed")
-  def updateAll(addresses: Iterable[Address], speed: Speed): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], speed: Speed): UIO[Int]
 
   /**
-   * Updates the status of the light at the specified address.
+   * Updates the status of the light at the specified MAC address.
    *
-   * @param address The address of the light to update.
-   * @param status  The status to set the light to.
+   * @param macAddress The MAC address of the light to update.
+   * @param status     The status to set the light to.
    * @return True if a light was found and updated.
    */
-  def update(address: Address, status: Status): UIO[Boolean]
+  def update(macAddress: MacAddress, status: Status): UIO[Boolean]
 
   /**
-   * Updates the statuses of the lights at the specified addresses.
+   * Updates the statuses of the lights at the specified MAC addresses.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param status    The status to set the lights to.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param status       The status to set the lights to.
    * @return The number of lights were found and updated.
    */
-  def updateAll(addresses: Iterable[Address], status: Status): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], status: Status): UIO[Int]
 
   /**
-   * Updates the light at the specified address using the specified update.
+   * Updates the light at the specified MAC address using the specified update.
    *
-   * @param address The address of the light to update.
-   * @param update  The update to apply to the light.
+   * @param macAddress The MAC address of the light to update.
+   * @param update     The update to apply to the light.
    * @return True if a light was found and updated.
    */
-  final def update(address: Address, update: Update): UIO[Boolean] = update match
-    case Update.Enabled(enabled) => this.update(address, enabled)
-    case Update.Brightness(brightness) => this.update(address, brightness)
-    case Update.Temperature(temperature) => this.update(address, temperature)
-    case Update.Color(color) => this.update(address, color)
-    case Update.Static(scene) => this.update(address, scene)
-    case Update.Dynamic(scene, speed) => this.update(address, scene, speed)
-    case Update.Speed(speed) => this.update(address, speed)
-    case Update.Status(status) => this.update(address, status)
+  final def update(macAddress: MacAddress, update: Update): UIO[Boolean] = update match
+    case Update.Enabled(enabled) => this.update(macAddress, enabled)
+    case Update.Brightness(brightness) => this.update(macAddress, brightness)
+    case Update.Temperature(temperature) => this.update(macAddress, temperature)
+    case Update.Color(color) => this.update(macAddress, color)
+    case Update.Static(scene) => this.update(macAddress, scene)
+    case Update.Dynamic(scene, speed) => this.update(macAddress, scene, speed)
+    case Update.Speed(speed) => this.update(macAddress, speed)
+    case Update.Status(status) => this.update(macAddress, status)
 
   /**
-   * Updates the lights at the specified addresses using the specified update.
+   * Updates the lights at the specified MAC addresses using the specified update.
    *
-   * @param addresses The addresses of the lights to update.
-   * @param update    The update to apply to the lights.
+   * @param macAddresses The MAC addresses of the lights to update.
+   * @param update       The update to apply to the lights.
    * @return The number of lights found and updated.
    */
-  final def updateAll(addresses: Iterable[Address], update: Update): UIO[Int] = update match
-    case Update.Enabled(enabled) => this.updateAll(addresses, enabled)
-    case Update.Brightness(brightness) => this.updateAll(addresses, brightness)
-    case Update.Temperature(temperature) => this.updateAll(addresses, temperature)
-    case Update.Color(color) => this.updateAll(addresses, color)
-    case Update.Static(scene) => this.updateAll(addresses, scene)
-    case Update.Dynamic(scene, speed) => this.updateAll(addresses, scene, speed)
-    case Update.Speed(speed) => this.updateAll(addresses, speed)
-    case Update.Status(status) => this.updateAll(addresses, status)
+  final def updateAll(macAddresses: Iterable[MacAddress], update: Update): UIO[Int] = update match
+    case Update.Enabled(enabled) => updateAll(macAddresses, enabled)
+    case Update.Brightness(brightness) => updateAll(macAddresses, brightness)
+    case Update.Temperature(temperature) => updateAll(macAddresses, temperature)
+    case Update.Color(color) => updateAll(macAddresses, color)
+    case Update.Static(scene) => updateAll(macAddresses, scene)
+    case Update.Dynamic(scene, speed) => updateAll(macAddresses, scene, speed)
+    case Update.Speed(speed) => updateAll(macAddresses, speed)
+    case Update.Status(status) => updateAll(macAddresses, status)
 
   /**
    * Subscribes to events from this service.

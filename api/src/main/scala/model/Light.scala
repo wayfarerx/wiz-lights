@@ -17,9 +17,6 @@
 package net.wayfarerx.wizlights
 package model
 
-import java.net.InetAddress
-import java.time.Instant
-
 import cats.data.ValidatedNel
 import cats.kernel.Order
 
@@ -28,18 +25,18 @@ import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
 /**
  * A light that is on the network.
  *
- * @param address The MAC address of this light.
- * @param status  The status of this light if available.
- * @param info    The information about this light if available.
+ * @param macAddress The MAC address of this light.
+ * @param status     The status of this light if available.
+ * @param info       The information about this light if available.
  */
 case class Light(
-  address: Address,
+  macAddress: MacAddress,
   status: Option[Status],
   info: Option[Info]
 ):
 
-  /** The internet address of this light. */
-  def inetAddress: Option[InetAddress] = info.map(_.inetAddress)
+  /** The IP address of this light. */
+  def ipAddress: Option[IpAddress] = info.map(_.ipAddress)
 
   /** The signal strength of this light. */
   def signal: Option[Signal] = info.flatMap(_.signal)
@@ -53,8 +50,8 @@ case class Light(
   /** The device type ID of this light. */
   def device: Option[Device] = info.flatMap(_.device)
 
-  /** The timestamp when this light was last seen. */
-  def lastSeen: Option[Instant] = info.flatMap(_.lastSeen)
+  /** The timestamp in milliseconds since the epoch when this light was last seen. */
+  def lastSeen: Option[Long] = info.flatMap(_.lastSeen)
 
   /** The home the light belongs to. */
   def home: Option[Home] = info.flatMap(_.home)
@@ -71,20 +68,20 @@ case class Light(
 object Light:
 
   /** The ordering of lights. */
-  given Ordering[Light] = Ordering.by[Light, String](_.address)
+  given Ordering[Light] = Ordering.by[Light, String](_.macAddress)
 
   /** The cats order of lights. */
   given Order[Light] = Order.fromOrdering
 
   /** The circe encoder for lights. */
   given Encoder[Light] =
-    Encoder.forProduct3("address", "status", "info")((l: Light) => (l.address, l.status, l.info))
+    Encoder.forProduct3("macAddress", "status", "info")((l: Light) => (l.macAddress, l.status, l.info))
       .mapJsonObject(_.filter(!_._2.isNull))
 
   /** The circe decoder for lights. */
   given Decoder[Light] = new Decoder[Light]:
 
-    private val productDecoder = Decoder.forProduct3("address", "status", "info")(Light.apply)
+    private val productDecoder = Decoder.forProduct3("macAddress", "status", "info")(Light.apply)
 
     override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, Light] =
       productDecoder.decodeAccumulating(cursor)

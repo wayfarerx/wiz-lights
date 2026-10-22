@@ -21,7 +21,7 @@ import io.circe.{Decoder, Encoder}
 
 import zio.{IO, ZIO}
 
-/** A speed value for dynamic scenes in the range 10 - 100. */
+/** A speed value for dynamic scenes in the range 10 - 200. */
 opaque type Speed <: Int = Int
 
 /**

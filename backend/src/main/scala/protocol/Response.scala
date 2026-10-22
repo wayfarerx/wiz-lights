@@ -207,7 +207,7 @@ object SyncPilotResponse:
 /**
  * The first beat response payload.
  *
- * @param mac         The mac address of the device.
+ * @param mac         The MAC address of the device.
  * @param homeId      The ID of the home the device belongs to.
  * @param roomId      The ID of the room the device belongs to.
  * @param rgn         The region of the device.
@@ -244,7 +244,7 @@ object FirstBeatResponsePayload:
 /**
  * The get pilot response payload.
  *
- * @param mac     The mac address of the device.
+ * @param mac     The MAC address of the device.
  * @param rssi    The Signal Strength Indicator, usually between -30 (excellent) and -90 (poor)
  * @param state   The state of the device.
  * @param dimming The brightness level of the device (10 - 100).
@@ -283,7 +283,7 @@ object GetPilotResponsePayload:
 /**
  * The get system config response payload.
  *
- * @param mac         The mac address of the device.
+ * @param mac         The MAC address of the device.
  * @param homeId      The ID of the home the device belongs to.
  * @param roomId      The ID of the room the device belongs to.
  * @param rgn         The region of the device.
@@ -350,7 +350,7 @@ object SetPilotResponsePayload:
 /**
  * The sync pilot response payload.
  *
- * @param mac     The mac address of the device.
+ * @param mac     The MAC address of the device.
  * @param rssi    The Signal Strength Indicator, usually between -30 (excellent) and -90 (poor).
  * @param state   The state of the device.
  * @param src     The source of the update.

@@ -17,9 +17,6 @@
 package net.wayfarerx.wizlights
 package model
 
-import java.net.InetAddress
-import java.time.Instant
-
 import cats.data.ValidatedNel
 
 import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
@@ -27,23 +24,23 @@ import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
 /**
  * Information about a light on the network.
  *
- * @param inetAddress The internet address of the light.
- * @param signal      The signal strength of the light if available.
- * @param module      The module name of the light if available.
- * @param firmware    The firmware version of the light if available.
- * @param device      The device type ID of the light if available.
- * @param lastSeen    The timestamp when the light was last seen if available.
- * @param home        The home the light belongs to if available.
- * @param room        The room the light is in if available.
- * @param group       The group the light belongs to if defined.
+ * @param ipAddress The IP address of the light.
+ * @param signal    The signal strength of the light if available.
+ * @param module    The module name of the light if available.
+ * @param firmware  The firmware version of the light if available.
+ * @param device    The device type ID of the light if available.
+ * @param lastSeen  The timestamp in milliseconds since the epoch when the light was last seen if available.
+ * @param home      The home the light belongs to if available.
+ * @param room      The room the light is in if available.
+ * @param group     The group the light belongs to if defined.
  */
 case class Info(
-  inetAddress: InetAddress,
+  ipAddress: IpAddress,
   signal: Option[Signal] = None,
   module: Option[Module] = None,
   firmware: Option[Firmware] = None,
   device: Option[Device] = None,
-  lastSeen: Option[Instant] = None,
+  lastSeen: Option[Long] = None,
   home: Option[Home] = None,
   room: Option[Room] = None,
   group: Option[Group] = None
@@ -54,16 +51,10 @@ case class Info(
  */
 object Info:
 
-  /** The circe encoder for internet addresses. */
-  given Encoder[InetAddress] = Encoder.encodeString.contramap(_.getHostAddress)
-
-  /** The circe decoder for internet addresses. */
-  given Decoder[InetAddress] = Decoder.decodeString.emapTry(str => scala.util.Try(InetAddress.getByName(str)))
-
   /** The circe encoder for light information. */
   given Encoder[Info] =
     Encoder.forProduct9(
-      "inetAddress",
+      "ipAddress",
       "signal",
       "module",
       "firmware",
@@ -73,7 +64,7 @@ object Info:
       "room",
       "group"
     )((info: Info) => (
-      info.inetAddress,
+      info.ipAddress,
       info.signal,
       info.module,
       info.firmware,
@@ -87,7 +78,7 @@ object Info:
   /** The circe decoder for light information. */
   given Decoder[Info] = new Decoder[Info]:
     private val productDecoder = Decoder.forProduct9(
-      "inetAddress",
+      "ipAddress",
       "signal",
       "module",
       "firmware",
