@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A unique home identifier. */
 opaque type Home <: Int = Int
@@ -29,11 +29,20 @@ opaque type Home <: Int = Int
  */
 object Home:
 
-  /** The ordering of home IDs. */
-  given Ordering[Home] = Ordering.Int
+  /** The circe encoder for home IDs. */
+  given Encoder[Home] = Encoder.encodeInt
 
-  /** The cats order of home IDs. */
-  given Order[Home] = Order.fromOrdering
+  /** The circe decoder for home IDs. */
+  given Decoder[Home] = Decoder.decodeInt.emap(from)
+
+  /**
+   * Attempts to create a new home identifier.
+   *
+   * @param value The home ID value.
+   * @return The new home identifier if valid or a failure.
+   */
+  def from(value: Int): Either[String, Home] =
+    if value > 0 then Right(value) else Left(s"Invalid home ID: $value. Must be positive.")
 
   /**
    * Creates a new home identifier.
@@ -41,6 +50,5 @@ object Home:
    * @param value The home ID value.
    * @return The new home identifier if the value is valid.
    */
-  def make(value: Int): Task[Home] =
-    if value > 0 then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(s"Invalid home ID: $value. Must be positive."))
+  def make(value: Int): IO[IllegalArgumentException, Home] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

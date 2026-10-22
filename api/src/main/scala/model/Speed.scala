@@ -17,7 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import zio.{Task, ZIO}
+import io.circe.{Decoder, Encoder}
+
+import zio.{IO, ZIO}
 
 /** A speed value for dynamic scenes in the range 10 - 100. */
 opaque type Speed <: Int = Int
@@ -26,6 +28,12 @@ opaque type Speed <: Int = Int
  * Factory for dynamic scene speed values.
  */
 object Speed:
+
+  /** The circe encoder for speed values. */
+  given Encoder[Speed] = Encoder.encodeInt
+
+  /** The circe decoder for speed values. */
+  given Decoder[Speed] = Decoder.decodeInt.emap(from)
 
   /** The slowest possible speed. */
   val Slowest: Speed = 10
@@ -37,13 +45,20 @@ object Speed:
   val Medium: Speed = (Fastest - Slowest) / 2 + Slowest
 
   /**
+   * Attempts to create a new dynamic scene speed definition.
+   *
+   * @param value The speed value of the dynamic scene in the range 10 - 200.
+   * @return The new dynamic scene speed definition if valid or a failure.
+   */
+  def from(value: Int): Either[String, Speed] =
+    if value >= Slowest && value <= Fastest then Right(value) else
+      Left(s"Invalid speed value: $value. Must be between $Slowest and $Fastest.")
+
+  /**
    * Creates a new dynamic scene speed definition.
    *
    * @param value The speed value of the dynamic scene in the range 10 - 100.
    * @return The new dynamic scene speed definition if the value is valid.
    */
-  def make(value: Int): Task[Speed] =
-    if value >= Slowest && value <= Fastest then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(
-        s"Invalid speed value: $value. Must be between $Slowest and $Fastest."
-      ))
+  def make(value: Int): IO[IllegalArgumentException, Speed] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

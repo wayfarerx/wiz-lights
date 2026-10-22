@@ -17,7 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import zio.{Task, ZIO}
+import io.circe.{Decoder, Encoder}
+
+import zio.{IO, ZIO}
 
 /** A brightness value for lights in the range 10 - 100. */
 opaque type Brightness <: Int = Int
@@ -26,6 +28,12 @@ opaque type Brightness <: Int = Int
  * Factory for light brightness values.
  */
 object Brightness:
+
+  /** The circe encoder for brightness values. */
+  given Encoder[Brightness] = Encoder.encodeInt
+
+  /** The circe decoder for brightness values. */
+  given Decoder[Brightness] = Decoder.decodeInt.emap(from)
 
   /** The dimmest possible brightness. */
   val Dimmest: Brightness = 10
@@ -37,13 +45,20 @@ object Brightness:
   val Medium: Brightness = (Brightest - Dimmest) / 2 + Dimmest
 
   /**
+   * Attempts to create a light brightness definition.
+   *
+   * @param value The brightness value of the light in the range 10 - 100.
+   * @return The new light brightness definition if valid or a failure.
+   */
+  def from(value: Int): Either[String, Brightness] =
+    if value >= Dimmest && value <= Brightest then Right(value)
+    else Left(s"Invalid brightness value: $value. Must be between $Dimmest and $Brightest.")
+
+  /**
    * Creates a new light brightness definition.
    *
    * @param value The brightness value of the light in the range 10 - 100.
    * @return The new light brightness definition if the value is valid.
    */
-  def make(value: Int): Task[Brightness] =
-    if value >= Dimmest && value <= Brightest then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(
-        s"Invalid brightness value: $value. Must be between $Dimmest and $Brightest."
-      ))
+  def make(value: Int): IO[IllegalArgumentException, Brightness] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

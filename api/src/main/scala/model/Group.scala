@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A group identifier within a room. */
 opaque type Group <: Int = Int
@@ -29,11 +29,20 @@ opaque type Group <: Int = Int
  */
 object Group:
 
-  /** The ordering of group IDs. */
-  given Ordering[Group] = Ordering.Int
+  /** The circe encoder for group IDs. */
+  given Encoder[Group] = Encoder.encodeInt
 
-  /** The cats order of group IDs. */
-  given Order[Group] = Order.fromOrdering
+  /** The circe decoder for group IDs. */
+  given Decoder[Group] = Decoder.decodeInt.emap(from)
+
+  /**
+   * Attempts to create a new group identifier.
+   *
+   * @param value The group ID value.
+   * @return The new group identifier if valid or a failure.
+   */
+  def from(value: Int): Either[String, Group] =
+    if value > 0 then Right(value) else Left(s"Invalid group ID: $value. Must be positive.")
 
   /**
    * Creates a new group identifier.
@@ -41,6 +50,5 @@ object Group:
    * @param value The group ID value.
    * @return The new group identifier if the value is valid.
    */
-  def make(value: Int): Task[Group] =
-    if value > 0 then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(s"Invalid group ID: $value. Must be positive."))
+  def make(value: Int): IO[IllegalArgumentException, Group] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

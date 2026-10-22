@@ -17,7 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import zio.{Task, ZIO}
+import io.circe.{Decoder, Encoder}
+
+import zio.{IO, ZIO}
 
 /** A signal strength value for lights in the range -95 dBm - -20 dBm. */
 opaque type Signal <: Int = Int
@@ -26,6 +28,12 @@ opaque type Signal <: Int = Int
  * Factory for light signal strength values.
  */
 object Signal:
+
+  /** The circe encoder for signal strength values. */
+  given Encoder[Signal] = Encoder.encodeInt
+
+  /** The circe decoder for signal strength values. */
+  given Decoder[Signal] = Decoder.decodeInt.emap(from)
 
   /** The weakest possible signal. */
   val Weakest: Signal = -95
@@ -37,13 +45,20 @@ object Signal:
   val Medium: Signal = (Strongest - Weakest) / 2 + Weakest
 
   /**
+   * Attempts to create a new light signal strength definition.
+   *
+   * @param value The signal strength value of the light in the range -95 dBm - -20 dBm.
+   * @return The new light signal strength definition if valid or a failure.
+   */
+  def from(value: Int): Either[String, Signal] =
+    if value >= Weakest && value <= Strongest then Right(value) else
+      Left(s"Invalid signal value: $value. Must be between $Weakest and $Strongest.")
+
+  /**
    * Creates a new light signal strength definition.
    *
    * @param value The signal strength value of the light in the range -90 - -30.
    * @return The new light signal strength definition if the value is valid.
    */
-  def make(value: Int): Task[Signal] =
-    if value >= Weakest && value <= Strongest then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(
-        s"Invalid signal value: $value. Must be between $Weakest and $Strongest."
-      ))
+  def make(value: Int): IO[IllegalArgumentException, Signal] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

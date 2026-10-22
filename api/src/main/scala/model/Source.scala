@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** An update source for a light. */
 opaque type Source <: String = String
@@ -28,6 +28,12 @@ opaque type Source <: String = String
  * Factory for update sources.
  */
 object Source:
+
+  /** The circe encoder for update sources. */
+  given Encoder[Source] = Encoder.encodeString
+
+  /** The circe decoder for update sources. */
+  given Decoder[Source] = Decoder.decodeString.emap(from)
 
   /** The heartbeat update source. */
   val Heartbeat: Source = "hb"
@@ -44,11 +50,15 @@ object Source:
   /** The motion sensor update source. */
   val Sensor: Source = "pir"
 
-  /** The ordering of update sources. */
-  given Ordering[Source] = Ordering.String
-
-  /** The cats order of update sources. */
-  given Order[Source] = Order.fromOrdering
+  /**
+   * Attempts to create an update source from the specified string.
+   *
+   * @param string The string to validate as an update source.
+   * @return The validated update source or a failure.
+   */
+  def from(string: String): Either[String, Source] = string.trim match
+    case invalid if invalid.isEmpty => Left("Empty or blank source.")
+    case valid => Right(valid)
 
   /**
    * Creates an update source from the specified string.
@@ -56,6 +66,5 @@ object Source:
    * @param string The string to validate as an update source.
    * @return The validated update source.
    */
-  def make(string: String): Task[Source] = string.trim match
-    case invalid if invalid.isEmpty => ZIO.fail(IllegalArgumentException("Empty or blank source."))
-    case valid => ZIO.succeed(valid)
+  def make(string: String): IO[IllegalArgumentException, Source] =
+    ZIO.fromEither(from(string)).mapError(IllegalArgumentException(_))

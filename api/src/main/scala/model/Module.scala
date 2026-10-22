@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A light module name. */
 opaque type Module <: String = String
@@ -29,11 +29,21 @@ opaque type Module <: String = String
  */
 object Module:
 
-  /** The ordering of module names. */
-  given Ordering[Module] = Ordering.String
+  /** The circe encoder for module names. */
+  given Encoder[Module] = Encoder.encodeString
 
-  /** The cats order of module names. */
-  given Order[Module] = Order.fromOrdering
+  /** The circe decoder for module names. */
+  given Decoder[Module] = Decoder.decodeString.emap(from)
+
+  /**
+   * Attempts to create a module name from the specified string.
+   *
+   * @param string The string to validate as a module name.
+   * @return The validated module name or a failure.
+   */
+  def from(string: String): Either[String, Module] = string.trim match
+    case invalid if invalid.isEmpty => Left("Empty or blank module name.")
+    case valid => Right(valid)
 
   /**
    * Creates a module name from the specified string.
@@ -41,6 +51,5 @@ object Module:
    * @param string The string to validate as a module name.
    * @return The validated module name.
    */
-  def make(string: String): Task[Module] = string.trim match
-    case invalid if invalid.isEmpty => ZIO.fail(IllegalArgumentException("Empty or blank module name."))
-    case valid => ZIO.succeed(valid)
+  def make(string: String): IO[IllegalArgumentException, Module] =
+    ZIO.fromEither(from(string)).mapError(IllegalArgumentException(_))

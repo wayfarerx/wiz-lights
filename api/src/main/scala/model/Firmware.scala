@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A light firmware version. */
 opaque type Firmware <: String = String
@@ -29,11 +29,21 @@ opaque type Firmware <: String = String
  */
 object Firmware:
 
-  /** The ordering of firmware versions. */
-  given Ordering[Firmware] = Ordering.String
+  /** The circe encoder for firmware versions. */
+  given Encoder[Firmware] = Encoder.encodeString
 
-  /** The cats order of firmware versions. */
-  given Order[Firmware] = Order.fromOrdering
+  /** The circe decoder for firmware versions. */
+  given Decoder[Firmware] = Decoder.decodeString.emap(from)
+
+  /**
+   * Attempts to create a firmware version from the specified string.
+   *
+   * @param string The string to validate as a firmware version.
+   * @return The validated firmware version or a failure.
+   */
+  def from(string: String): Either[String, Firmware] = string.trim match
+    case invalid if invalid.isEmpty => Left("Empty or blank firmware version.")
+    case valid => Right(valid)
 
   /**
    * Creates a firmware version from the specified string.
@@ -41,6 +51,5 @@ object Firmware:
    * @param string The string to validate as a firmware version.
    * @return The validated firmware version.
    */
-  def make(string: String): Task[Firmware] = string.trim match
-    case invalid if invalid.isEmpty => ZIO.fail(IllegalArgumentException("Empty or blank firmware version."))
-    case valid => ZIO.succeed(valid)
+  def make(string: String): IO[IllegalArgumentException, Firmware] =
+    ZIO.fromEither(from(string)).mapError(IllegalArgumentException(_))

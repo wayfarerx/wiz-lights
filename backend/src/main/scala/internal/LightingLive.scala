@@ -662,7 +662,7 @@ object LightingLive:
           else if d > Brightness.Brightest then ZIO.succeed(Brightness.Brightest)
           else Brightness.make(d).orElseSucceed(Brightness.Brightest)
         }
-        status <- sceneId.flatMap(Scene.valueBy) match
+        status <- sceneId.flatMap(id => Scene.from(id).toOption) match
           case Some(dynamic: Scene.Dynamic) =>
             val getSpeed = speed.fold(ZIO.succeed(Speed.Medium)) { s =>
               if s < Speed.Slowest then ZIO.succeed(Speed.Slowest)

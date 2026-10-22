@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A light device type identifier. */
 opaque type Device <: Int = Int
@@ -29,11 +29,21 @@ opaque type Device <: Int = Int
  */
 object Device:
 
-  /** The ordering of device type IDs. */
-  given Ordering[Device] = Ordering.Int
+  /** The circe encoder for device type identifiers. */
+  given Encoder[Device] = Encoder.encodeInt
 
-  /** The cats order of device type IDs. */
-  given Order[Device] = Order.fromOrdering
+  /** The circe decoder for device type identifiers. */
+  given Decoder[Device] = Decoder.decodeInt.emap(from)
+
+  /**
+   * Attempts to create a new device type identifier.
+   *
+   * @param value The device type ID value.
+   * @return The new device type identifier if valid or a failure.
+   */
+  def from(value: Int): Either[String, Device] =
+    if value >= 0 then Right(value)
+    else Left(s"Invalid device type ID: $value. Cannot be negative.")
 
   /**
    * Creates a new device type identifier.
@@ -41,6 +51,5 @@ object Device:
    * @param value The device type ID value.
    * @return The new device type identifier if the value is valid.
    */
-  def make(value: Int): Task[Device] =
-    if value >= 0 then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(s"Invalid device type ID: $value. Cannot be negative."))
+  def make(value: Int): IO[IllegalArgumentException, Device] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

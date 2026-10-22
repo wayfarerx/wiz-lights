@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A unique room identifier within a home. */
 opaque type Room <: Int = Int
@@ -29,11 +29,20 @@ opaque type Room <: Int = Int
  */
 object Room:
 
-  /** The ordering of room IDs. */
-  given Ordering[Room] = Ordering.Int
+  /** The circe encoder for room IDs. */
+  given Encoder[Room] = Encoder.encodeInt
 
-  /** The cats order of room IDs. */
-  given Order[Room] = Order.fromOrdering
+  /** The circe decoder for room IDs. */
+  given Decoder[Room] = Decoder.decodeInt.emap(from)
+
+  /**
+   * Attempts to create a new room identifier.
+   *
+   * @param value The room ID value.
+   * @return The new room identifier if valid or a failure.
+   */
+  def from(value: Int): Either[String, Room] =
+    if value > 0 then Right(value) else Left(s"Invalid room ID: $value. Must be positive.")
 
   /**
    * Creates a new room identifier.
@@ -41,6 +50,5 @@ object Room:
    * @param value The room ID value.
    * @return The new room identifier if the value is valid.
    */
-  def make(value: Int): Task[Room] =
-    if value > 0 then ZIO.succeed(value) else
-      ZIO.fail(IllegalArgumentException(s"Invalid room ID: $value. Must be positive."))
+  def make(value: Int): IO[IllegalArgumentException, Room] =
+    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))

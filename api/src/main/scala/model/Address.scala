@@ -17,9 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import cats.kernel.Order
+import io.circe.{Decoder, Encoder}
 
-import zio.{Task, ZIO}
+import zio.{IO, ZIO}
 
 /** A lower-case representation of a MAC address. */
 opaque type Address <: String = String
@@ -29,14 +29,25 @@ opaque type Address <: String = String
  */
 object Address:
 
-  /** The ordering of MAC addresses. */
-  given Ordering[Address] = Ordering.String
+  /** The circe encoder for MAC addresses. */
+  given Encoder[Address] = Encoder.encodeString
 
-  /** The cats order of MAC addresses. */
-  given Order[Address] = Order.fromOrdering
+  /** The circe decoder for MAC addresses. */
+  given Decoder[Address] = Decoder.decodeString.emap(from)
 
   /** A pattern that matches valid MAC address strings. */
   private val ValidAddress = "([0-9a-f]{12})".r
+
+  /**
+   * Attempts to create a MAC address from the specified string.
+   *
+   * @param string The string to validate as a MAC address.
+   * @return The validated MAC address or a failure.
+   */
+  def from(string: String): Either[String, Address] = string.toLowerCase.trim match
+    case invalid if invalid.isEmpty => Left("Empty or blank MAC address.")
+    case ValidAddress(address) => Right(address)
+    case malformed => Left(s"Malformed MAC address: $malformed.")
 
   /**
    * Creates a MAC address from the specified string.
@@ -44,7 +55,5 @@ object Address:
    * @param string The string to validate as a MAC address.
    * @return The validated MAC address.
    */
-  def make(string: String): Task[Address] = string.toLowerCase.trim match
-    case invalid if invalid.isEmpty => ZIO.fail(IllegalArgumentException("Empty or blank MAC address."))
-    case ValidAddress(address) => ZIO.succeed(address)
-    case malformed => ZIO.fail(IllegalArgumentException(s"Malformed MAC address: $malformed."))
+  def make(string: String): IO[IllegalArgumentException, Address] =
+    ZIO.fromEither(from(string)).mapError(IllegalArgumentException(_))

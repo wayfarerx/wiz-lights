@@ -24,6 +24,9 @@ lazy val ZioTestMagnolia = "dev.zio" %% "zio-test-magnolia" % zioVersion % Test
 lazy val zioPreludeVersion = "1.0.0-RC45"
 lazy val ZioPrelude = "dev.zio" %% "zio-prelude" % zioPreludeVersion
 
+lazy val zioHttpVersion = "3.0.1"
+lazy val ZioHttp = "dev.zio" %% "zio-http" % zioHttpVersion
+
 /**
  * The project that defines the API.
  */
@@ -32,6 +35,7 @@ lazy val api = (project in file("api"))
     name := "wiz-lights-api",
     libraryDependencies ++= Seq(
       CatsCore,
+      CirceCore,
       Zio,
       ZioStreams,
       ZioTest,
@@ -68,10 +72,36 @@ lazy val backend = (project in file("backend"))
   .dependsOn(api)
 
 /**
+ * The project that defines the server.
+ */
+lazy val server = (project in file("server"))
+  .settings(
+    name := "wiz-lights-server",
+    libraryDependencies ++= Seq(
+      CatsCore,
+      CirceCore,
+      CirceGeneric,
+      CirceParser,
+      Zio,
+      ZioStreams,
+      ZioConcurrent,
+      ZioPrelude,
+      ZioHttp,
+      ZioTest,
+      ZioTestSbt,
+      ZioTestMagnolia
+    ),
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
+    idePackagePrefix := Some("net.wayfarerx.wizlights.server")
+  )
+  .dependsOn(backend)
+
+/**
  * The project that aggregates all the other projects.
  */
 lazy val root = (project in file("."))
   .settings(
     name := "wiz-lights",
     publish / skip := true
-).aggregate(api, backend)
+  ).aggregate(api, backend, server)
+

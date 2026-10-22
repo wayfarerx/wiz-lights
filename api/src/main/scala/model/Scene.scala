@@ -17,7 +17,9 @@
 package net.wayfarerx.wizlights
 package model
 
-import zio.{Task, ZIO}
+import io.circe.{Decoder, Encoder}
+
+import zio.{IO, ZIO}
 
 /**
  * Scenes a light can perform.
@@ -40,6 +42,15 @@ sealed trait Scene:
  * Definitions associated with scenes.
  */
 object Scene:
+
+  /** The circe encoder for scenes. */
+  given Encoder[Scene] = Encoder.encodeInt.contramap(_.id)
+
+  /** The circe decoder for scenes. */
+  given Decoder[Scene] = Decoder.instance { cursor =>
+    if cursor.value.isNumber then Decoder.decodeInt.emap(from)(cursor)
+    else Decoder.decodeString.emap(from)(cursor)
+  }
 
   /** Export the static scenes. */
   export Static.{
@@ -97,8 +108,8 @@ object Scene:
   }
 
   /** The scenes indexed by their IDs. */
-  val values: Array[Scene] =
-    (Static.values.iterator ++ Dynamic.values.iterator).toArray.sortBy(_.id)
+  val values: List[Scene] =
+    (Static.values.iterator ++ Dynamic.values.iterator).toList.sortBy(_.id)
 
   /** The scenes indexed by their IDs. */
   private lazy val byId = values.map(scene => scene.id -> scene).toMap
@@ -107,13 +118,31 @@ object Scene:
   private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
 
   /**
+   * Attempts to return the scene with the specified ID.
+   *
+   * @param id The ID of the scene to return.
+   * @return The scene with the specified ID or a failure.
+   */
+  def from(id: Int): Either[String, Scene] =
+    byId.get(id).toRight(s"Invalid scene ID: $id.")
+
+  /**
    * Returns the scene with the specified ID.
    *
    * @param id The ID of the scene to return.
    * @return The scene with the specified ID if it exists or fails if it does not.
    */
-  def make(id: Int): Task[Scene] =
-    valueBy(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene ID: $id.")))(ZIO.succeed(_))
+  def make(id: Int): IO[IllegalArgumentException, Scene] =
+    ZIO.fromEither(from(id)).mapError(IllegalArgumentException(_))
+
+  /**
+   * Attempts to return the scene with the specified name.
+   *
+   * @param name The name of the scene to return.
+   * @return The scene with the specified name or a failure.
+   */
+  def from(name: String): Either[String, Scene] =
+    byName.get(name.toLowerCase.trim).toRight(s"Invalid scene name: $name.")
 
   /**
    * Returns the scene with the specified name.
@@ -121,24 +150,8 @@ object Scene:
    * @param name The name of the scene to return.
    * @return The scene with the specified name if it exists or fails if it does not.
    */
-  def make(name: String): Task[Scene] =
-    valueBy(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid scene name: $name.")))(ZIO.succeed(_))
-
-  /**
-   * Returns the scene with the specified ID.
-   *
-   * @param id The ID of the scene to return.
-   * @return The scene with the specified ID if it exists.
-   */
-  def valueBy(id: Int): Option[Scene] = byId.get(id)
-
-  /**
-   * Returns the scene with the specified name.
-   *
-   * @param name The name of the scene to return.
-   * @return The scene with the specified name if it exists.
-   */
-  def valueBy(name: String): Option[Scene] = byName.get(name.toLowerCase.trim)
+  def make(name: String): IO[IllegalArgumentException, Scene] =
+    ZIO.fromEither(from(name)).mapError(IllegalArgumentException(_))
 
   /**
    * Static scenes that maintain a fixed color or color temperature.
@@ -192,6 +205,15 @@ object Scene:
    */
   object Static:
 
+    /** The circe encoder for static scenes. */
+    given Encoder[Static] = Encoder.encodeInt.contramap(_.id)
+
+    /** The circe decoder for static scenes. */
+    given Decoder[Static] = Decoder.instance { cursor =>
+      if cursor.value.isNumber then Decoder.decodeInt.emap(from)(cursor)
+      else Decoder.decodeString.emap(from)(cursor)
+    }
+
     /** The static scenes indexed by their IDs. */
     private lazy val byId = values.map(scene => scene.id -> scene).toMap
 
@@ -199,13 +221,31 @@ object Scene:
     private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
 
     /**
+     * Attempts to return the static scene with the specified ID.
+     *
+     * @param id The ID of the static scene to return.
+     * @return The static scene with the specified ID or a failure.
+     */
+    def from(id: Int): Either[String, Static] =
+      byId.get(id).toRight(s"Invalid static scene ID: $id.")
+
+    /**
      * Returns the static scene with the specified ID.
      *
      * @param id The ID of the static scene to return.
      * @return The static scene with the specified ID if it exists or fails if it does not.
      */
-    def make(id: Int): Task[Static] =
-      valueBy(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid static scene ID: $id.")))(ZIO.succeed(_))
+    def make(id: Int): IO[IllegalArgumentException, Static] =
+      ZIO.fromEither(from(id)).mapError(IllegalArgumentException(_))
+
+    /**
+     * Attempts to return the static scene with the specified name.
+     *
+     * @param name The name of the static scene to return.
+     * @return The static scene with the specified name or a failure.
+     */
+    def from(name: String): Either[String, Static] =
+      byName.get(name.toLowerCase.trim).toRight(s"Invalid static scene name: $name.")
 
     /**
      * Returns the static scene with the specified name.
@@ -213,24 +253,8 @@ object Scene:
      * @param name The name of the static scene to return.
      * @return The static scene with the specified name if it exists or fails if it does not.
      */
-    def make(name: String): Task[Static] =
-      valueBy(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid static scene name: $name.")))(ZIO.succeed(_))
-
-    /**
-     * Returns the static scene with the specified ID.
-     *
-     * @param id The ID of the static scene to return.
-     * @return The static scene with the specified ID if it exists.
-     */
-    def valueBy(id: Int): Option[Static] = byId.get(id)
-
-    /**
-     * Returns the static scene with the specified name.
-     *
-     * @param name The name of the static scene to return.
-     * @return The static scene with the specified name if it exists.
-     */
-    def valueBy(name: String): Option[Static] = byName.get(name.toLowerCase.trim)
+    def make(name: String): IO[IllegalArgumentException, Static] =
+      ZIO.fromEither(from(name)).mapError(IllegalArgumentException(_))
 
   /**
    * Dynamic scenes that cycle through colors or change over time.
@@ -353,6 +377,15 @@ object Scene:
    */
   object Dynamic:
 
+    /** The circe encoder for dynamic scenes. */
+    given Encoder[Dynamic] = Encoder.encodeInt.contramap(_.id)
+
+    /** The circe decoder for dynamic scenes. */
+    given Decoder[Dynamic] = Decoder.instance { cursor =>
+      if cursor.value.isNumber then Decoder.decodeInt.emap(from)(cursor)
+      else Decoder.decodeString.emap(from)(cursor)
+    }
+
     /** The dynamic scenes indexed by their IDs. */
     private lazy val byId = values.map(scene => scene.id -> scene).toMap
 
@@ -360,13 +393,31 @@ object Scene:
     private lazy val byName = values.map(scene => scene.name.toLowerCase -> scene).toMap
 
     /**
+     * Attempts to return the dynamic scene with the specified ID.
+     *
+     * @param id The ID of the dynamic scene to return.
+     * @return The dynamic scene with the specified ID or a failure.
+     */
+    def from(id: Int): Either[String, Dynamic] =
+      byId.get(id).toRight(s"Invalid dynamic scene ID: $id.")
+
+    /**
      * Returns the dynamic scene with the specified ID.
      *
      * @param id The ID of the dynamic scene to return.
      * @return The dynamic scene with the specified ID if it exists or fails if it does not.
      */
-    def make(id: Int): Task[Dynamic] =
-      valueBy(id).fold(ZIO.fail(new IllegalArgumentException(s"Invalid dynamic scene ID: $id.")))(ZIO.succeed(_))
+    def make(id: Int): IO[IllegalArgumentException, Dynamic] =
+      ZIO.fromEither(from(id)).mapError(IllegalArgumentException(_))
+
+    /**
+     * Attempts to return the dynamic scene with the specified name.
+     *
+     * @param name The name of the dynamic scene to return.
+     * @return The dynamic scene with the specified name or a failure.
+     */
+    def from(name: String): Either[String, Dynamic] =
+      byName.get(name.toLowerCase.trim).toRight(s"Invalid dynamic scene name: $name.")
 
     /**
      * Returns the dynamic scene with the specified name.
@@ -374,21 +425,5 @@ object Scene:
      * @param name The name of the dynamic scene to return.
      * @return The dynamic scene with the specified name if it exists or fails if it does not.
      */
-    def make(name: String): Task[Dynamic] =
-      valueBy(name).fold(ZIO.fail(new IllegalArgumentException(s"Invalid dynamic scene name: $name.")))(ZIO.succeed(_))
-
-    /**
-     * Returns the dynamic scene with the specified ID.
-     *
-     * @param id The ID of the dynamic scene to return.
-     * @return The dynamic scene with the specified ID if it exists.
-     */
-    def valueBy(id: Int): Option[Dynamic] = byId.get(id)
-
-    /**
-     * Returns the dynamic scene with the specified name.
-     *
-     * @param name The name of the dynamic scene to return.
-     * @return The dynamic scene with the specified name if it exists.
-     */
-    def valueBy(name: String): Option[Dynamic] = byName.get(name.toLowerCase.trim)
+    def make(name: String): IO[IllegalArgumentException, Dynamic] =
+      ZIO.fromEither(from(name)).mapError(IllegalArgumentException(_))
