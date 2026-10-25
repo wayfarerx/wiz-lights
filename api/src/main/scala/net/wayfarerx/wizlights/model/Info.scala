@@ -26,24 +26,24 @@ import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
  *
  * @param ipAddress The IP address of the light.
  * @param signal    The signal strength of the light if available.
- * @param module    The module name of the light if available.
- * @param firmware  The firmware version of the light if available.
- * @param device    The device type ID of the light if available.
- * @param lastSeen  The timestamp in milliseconds since the epoch when the light was last seen if available.
  * @param home      The home the light belongs to if available.
  * @param room      The room the light is in if available.
+ * @param module    The module name of the light if available.
+ * @param firmware  The firmware version of the light if available.
  * @param group     The group the light belongs to if defined.
+ * @param device    The device type ID of the light if available.
+ * @param timestamp The timestamp when the light was last seen if available.
  */
 case class Info(
   ipAddress: IpAddress,
   signal: Option[Signal] = None,
-  module: Option[Module] = None,
-  firmware: Option[Firmware] = None,
-  device: Option[Device] = None,
-  lastSeen: Option[Long] = None,
   home: Option[Home] = None,
   room: Option[Room] = None,
-  group: Option[Group] = None
+  module: Option[Module] = None,
+  firmware: Option[Firmware] = None,
+  group: Option[Group] = None,
+  device: Option[Device] = None,
+  timestamp: Option[Timestamp] = None
 )
 
 /**
@@ -56,23 +56,23 @@ object Info:
     Encoder.forProduct9(
       "ipAddress",
       "signal",
-      "module",
-      "firmware",
-      "device",
-      "lastSeen",
       "home",
       "room",
-      "group"
+      "module",
+      "firmware",
+      "group",
+      "device",
+      "timestamp"
     )((info: Info) => (
       info.ipAddress,
       info.signal,
-      info.module,
-      info.firmware,
-      info.device,
-      info.lastSeen,
       info.home,
       info.room,
-      info.group
+      info.module,
+      info.firmware,
+      info.group,
+      info.device,
+      info.timestamp
     )).mapJsonObject(_.filter(!_._2.isNull))
 
   /** The circe decoder for light information. */
@@ -80,13 +80,13 @@ object Info:
     private val productDecoder = Decoder.forProduct9(
       "ipAddress",
       "signal",
-      "module",
-      "firmware",
-      "device",
-      "lastSeen",
       "home",
       "room",
-      "group"
+      "module",
+      "firmware",
+      "group",
+      "device",
+      "timestamp"
     )(Info.apply)
 
     override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, Info] =

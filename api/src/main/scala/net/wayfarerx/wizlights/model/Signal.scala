@@ -21,7 +21,7 @@ import io.circe.{Decoder, Encoder}
 
 import zio.{IO, ZIO}
 
-/** A signal strength value for lights in the range -95 dBm - -20 dBm. */
+/** A signal strength value for lights in the range -95 dBm to -20 dBm. */
 opaque type Signal <: Int = Int
 
 /**

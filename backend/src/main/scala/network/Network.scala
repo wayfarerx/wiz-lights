@@ -31,11 +31,8 @@ import zio.stream.{UStream, ZStream}
 
 /**
  * A service that manages interaction with the network.
- *
- * @param outgoing The queue of outgoing messages.
- * @param incoming The hub of incoming messages.
  */
-final class Network private[backend](outgoing: Queue[Outgoing], incoming: Hub[Incoming]):
+trait Network:
 
   /**
    * Publishes a command message on the command port.
@@ -43,21 +40,38 @@ final class Network private[backend](outgoing: Queue[Outgoing], incoming: Hub[In
    * @param message The outgoing message to publish.
    * @return An effect that completes when the message is published.
    */
-  def publish(message: Outgoing): UIO[Unit] =
-    outgoing.offer(message).ignore
+  def publish(message: Outgoing): UIO[Unit]
 
   /**
    * Subscribes to responses received across all response ports.
    *
    * @return A subscription to incoming responses from all response ports.
    */
-  def subscribe: URIO[Scope, UStream[Incoming]] =
+  def subscribe: URIO[Scope, UStream[Incoming]]
+
+/**
+ * The live implementation of the network service.
+ *
+ * @param outgoing The queue of outgoing messages.
+ * @param incoming The hub of incoming messages.
+ */
+final class NetworkLive private(outgoing: Queue[Outgoing], incoming: Hub[Incoming]) extends Network:
+
+  /* Publish a command message on the command port. */
+  override def publish(message: Outgoing): UIO[Unit] =
+    outgoing.offer(message).ignore
+
+  /* Subscribe to responses received across all response ports. */
+  override def subscribe: URIO[Scope, UStream[Incoming]] =
     ZStream.fromHubScoped(incoming)
 
 /**
- * Factory for network services.
+ * Factory for live network services.
  */
-object Network:
+object NetworkLive:
+
+  /** The golden ratio for staggering broadcast address refreshes. */
+  private val GoldenRatio = (1.0 + Math.sqrt(5.0)) / 2.0
 
   /** The default broadcast addresses. */
   private val DefaultBroadcastAddresses =
@@ -101,11 +115,13 @@ object Network:
       received = incoming.publish(_: Incoming).ignore
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
+      refreshBroadcastInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
       broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
       _ <- refreshBroadcastAddresses(broadcastAddresses)
-        .repeat(Schedule.fixed(Duration.fromScala(discoveryInterval * Math.E))).forkScoped
+      _ <- refreshBroadcastAddresses(broadcastAddresses)
+        .repeat(Schedule.spaced(refreshBroadcastInterval)).delay(refreshBroadcastInterval).forkScoped
       _ <- ZStream.fromQueue(outgoing).foreach(write(broadcastAddresses, commandSocket, _)).forkScoped
-    yield Network(outgoing, incoming)
+    yield NetworkLive(outgoing, incoming)
 
   /**
    * Acquires an event loop group.
@@ -158,3 +174,4 @@ object Network:
       case Outgoing.Send(addresses, _) => ZIO.succeed(addresses)
     _ <- socket(addresses, message.request)
   yield ()
+

@@ -38,37 +38,38 @@ object InfoSpec extends ZIOSpecDefault:
         h <- Home.make(100)
         r <- Room.make(5)
         g <- Group.make(2)
+        t <- Timestamp.make(1700000000000L)
         minInfo = Info(ip)
         fullInfo = Info(
           ipAddress = ip,
           signal = Some(sig),
-          module = Some(mod),
-          firmware = Some(fw),
-          device = Some(dev),
-          lastSeen = Some(1700000000000L),
           home = Some(h),
           room = Some(r),
-          group = Some(g)
+          module = Some(mod),
+          firmware = Some(fw),
+          group = Some(g),
+          device = Some(dev),
+          timestamp = Some(t)
         )
       yield assertTrue(
         minInfo.ipAddress == ip,
         minInfo.signal.isEmpty,
-        minInfo.module.isEmpty,
-        minInfo.firmware.isEmpty,
-        minInfo.device.isEmpty,
-        minInfo.lastSeen.isEmpty,
         minInfo.home.isEmpty,
         minInfo.room.isEmpty,
+        minInfo.module.isEmpty,
+        minInfo.firmware.isEmpty,
         minInfo.group.isEmpty,
+        minInfo.device.isEmpty,
+        minInfo.timestamp.isEmpty,
         fullInfo.ipAddress == ip,
         fullInfo.signal.contains(sig),
-        fullInfo.module.contains(mod),
-        fullInfo.firmware.contains(fw),
-        fullInfo.device.contains(dev),
-        fullInfo.lastSeen.contains(1700000000000L),
         fullInfo.home.contains(h),
         fullInfo.room.contains(r),
-        fullInfo.group.contains(g)
+        fullInfo.module.contains(mod),
+        fullInfo.firmware.contains(fw),
+        fullInfo.group.contains(g),
+        fullInfo.device.contains(dev),
+        fullInfo.timestamp.contains(t)
       )
     },
     test("encode and decode minimal Info as JSON") {
@@ -92,16 +93,17 @@ object InfoSpec extends ZIOSpecDefault:
         h <- Home.make(100)
         r <- Room.make(5)
         g <- Group.make(2)
+        t <- Timestamp.make(1700000000000L)
         fullInfo = Info(
           ipAddress = ip,
           signal = Some(sig),
-          module = Some(mod),
-          firmware = Some(fw),
-          device = Some(dev),
-          lastSeen = Some(1700000000000L),
           home = Some(h),
           room = Some(r),
-          group = Some(g)
+          module = Some(mod),
+          firmware = Some(fw),
+          group = Some(g),
+          device = Some(dev),
+          timestamp = Some(t)
         )
         encoded = Encoder[Info].apply(fullInfo)
         decoded = Decoder[Info].decodeJson(encoded)
