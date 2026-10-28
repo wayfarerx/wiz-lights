@@ -33,7 +33,7 @@ private sealed trait DeviceChanges:
   def macAddress: MacAddress
 
   /** The timestamp when the device change was observed. */
-  def timestamp: Timestamp
+  def timestamp: Long
 
 /**
  * The supported device change types.
@@ -54,7 +54,7 @@ private object DeviceChanges:
    */
   final case class Settings(
     macAddress: MacAddress,
-    timestamp: Timestamp,
+    timestamp: Long,
     home: Option[Home] = None,
     room: Option[Room] = None,
     module: Option[Module] = None,
@@ -91,16 +91,15 @@ private object DeviceChanges:
       groupId: Option[Int] = None,
       typeId: Option[Int] = None
     ): IO[IllegalArgumentException, Settings] = for
-      (ma, ts, home, room, module, firmware, group, device) <-
+      (mac, home, room, module, firmware, group, device) <-
         MacAddress.make(macAddress) validate
-          Timestamp.make(timestamp) validate
           homeId.fold(ZIO.none)(Home.make(_).asSome) validate
           roomId.fold(ZIO.none)(Room.make(_).asSome) validate
           moduleName.fold(ZIO.none)(Module.make(_).asSome) validate
           fwVersion.fold(ZIO.none)(Firmware.make(_).asSome) validate
           groupId.fold(ZIO.none)(Group.make(_).asSome) validate
           typeId.fold(ZIO.none)(Device.make(_).asSome)
-    yield Settings(ma, ts, home, room, module, firmware, group, device)
+    yield Settings(mac, timestamp, home, room, module, firmware, group, device)
 
   /**
    * Details of pilot changes reported by a light.
@@ -117,7 +116,7 @@ private object DeviceChanges:
    */
   final case class Pilot(
     macAddress: MacAddress,
-    timestamp: Timestamp,
+    timestamp: Long,
     signal: Signal,
     state: Boolean,
     brightness: Option[Brightness] = None,
@@ -165,9 +164,8 @@ private object DeviceChanges:
       c: Option[Int] = None,
       w: Option[Int] = None
     ): IO[IllegalArgumentException, Pilot] = for
-      (ma, ts, signal, brightness, temperature, scene, speed, color) <-
+      (mac, signal, brightness, temperature, scene, speed, color) <-
         MacAddress.make(macAddress) validate
-          Timestamp.make(timestamp) validate
           Signal.make(rssi) validate
           dimming.fold(ZIO.none)(Brightness.make(_).asSome) validate
           temp.fold(ZIO.none)(Temperature.make(_).asSome) validate
@@ -183,4 +181,4 @@ private object DeviceChanges:
               ).asSome
             else ZIO.none
           }
-    yield Pilot(ma, ts, signal, state, brightness, temperature, scene, speed, color)
+    yield Pilot(mac, timestamp, signal, state, brightness, temperature, scene, speed, color)

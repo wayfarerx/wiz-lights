@@ -50,9 +50,6 @@ case class Light(
   /** The device type ID of this light. */
   def device: Option[Device] = info.flatMap(_.device)
 
-  /** The timestamp in milliseconds since the epoch when this light was last seen. */
-  def lastSeen: Option[Long] = info.flatMap(_.timestamp)
-
   /** The home the light belongs to. */
   def home: Option[Home] = info.flatMap(_.home)
 

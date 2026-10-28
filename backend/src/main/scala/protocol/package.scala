@@ -23,31 +23,31 @@ package backend
 package object protocol:
 
   /** The name of the "error" key. */
-  private val ErrorKey = "error"
+  val ErrorKey = "error"
 
   /** The name of the "method" key. */
-  private val MethodKey = "method"
+  val MethodKey = "method"
 
   /** The name of the "params" key. */
-  private val ParamsKey = "params"
+  val ParamsKey = "params"
 
   /** The name of the "result" key. */
-  private val ResultKey = "result"
+  val ResultKey = "result"
 
   /** The name of the "firstBeat" method. */
-  private val FirstBeatMethod = "firstBeat"
+  val FirstBeatMethod = "firstBeat"
   
   /** The name of the "getPilot" method. */
-  private val GetPilotMethod = "getPilot"
+  val GetPilotMethod = "getPilot"
 
   /** The name of the "getSystemConfig" method. */
-  private val GetSystemConfigMethod = "getSystemConfig"
+  val GetSystemConfigMethod = "getSystemConfig"
 
   /** The name of the "registration" method. */
-  private val RegistrationMethod = "registration"
+  val RegistrationMethod = "registration"
   
   /** The name of the "setPilot" method. */
-  private val SetPilotMethod = "setPilot"
+  val SetPilotMethod = "setPilot"
 
   /** The name of the "syncPilot" method. */
-  private val SyncPilotMethod = "syncPilot"
+  val SyncPilotMethod = "syncPilot"

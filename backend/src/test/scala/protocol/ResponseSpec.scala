@@ -19,7 +19,7 @@ package backend
 package protocol
 
 import io.circe.parser.decode as decodeJson
-import io.circe.{Decoder, DecodingFailure}
+import io.circe.DecodingFailure
 
 import zio.Scope
 import zio.test.*

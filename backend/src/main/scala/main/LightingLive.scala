@@ -42,7 +42,7 @@ import service.Lighting
  * @param devices           The reference to known lights.
  * @param responseListeners The reference to active response listeners for retries.
  */
-final class LightingLive private[backend](
+final class LightingLive private(
   retryBackoffs: List[Duration],
   clock: Clock,
   network: Network,
@@ -53,6 +53,10 @@ final class LightingLive private[backend](
 
   /** The number of milliseconds since the epoch. */
   private val currentTime: UIO[Long] = clock.currentTime(TimeUnit.MILLISECONDS)
+
+  //
+  // Service implementation methods.
+  //
 
   /* Return the lights managed by this service. */
   override def lights: UIO[Set[Light]] =
@@ -230,15 +234,57 @@ final class LightingLive private[backend](
   override def subscribe: URIO[Scope, UStream[(Light, Option[Source])]] =
     ZStream.fromHubScoped(events)
 
+  //
+  // Handling of outgoing messages.
+  //
+
   /** Broadcasts discovery requests on the network. */
   def discover: UIO[Unit] = for
     _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest))
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest))
-    credentials <- localCredentials
+    credentials <- network.localhost
     _ <- credentials match
       case Some((mac, ip)) => network.publish(Outgoing.Broadcast(RegistrationRequest(mac, ip)))
       case None => ZIO.unit
   yield ()
+
+  /**
+   * Executes a partial or full status update on lights matching the specified addresses.
+   *
+   * @param addresses    The addresses of the lights to update.
+   * @param request      The pilot request to send.
+   * @param updateStatus The function to update the local cached status.
+   * @return The number of lights found and updated.
+   */
+  private def executeUpdate(
+    addresses: Iterable[MacAddress],
+    request: SetPilotRequest,
+    updateStatus: Option[Status] => Option[Status]
+  ): UIO[Int] = for
+    targetAddresses <- ZIO.succeed(addresses.toSet)
+    currentRecords <- devices.get
+    matching = targetAddresses.flatMap { addr =>
+      currentRecords.get(addr).flatMap(rec => rec.inetAddress.map(ip => (addr, rec, ip)))
+    }
+    _ <- if matching.isEmpty then ZIO.unit else
+      val ips = matching.map(_._3)
+      for
+        now <- Clock.instant
+        updatedLights <- devices.modify { map =>
+          val updated = matching.foldLeft(map) { case (acc, (addr, rec, _)) =>
+            val newStatus = updateStatus(rec.status)
+            val newRec = rec.copy(status = newStatus)// FIXME, lastSeen = Some(now))
+            acc.updated(addr, newRec)
+          }
+          val lights = matching.flatMap { case (addr, _, _) => updated.get(addr).map(_.toLight) }
+          (lights, updated)
+        }
+        _ <- sendCommand(ips, request)
+        _ <- ZIO.foreachDiscard(updatedLights) { light =>
+          events.publish((light, Some(Source.Udp)))
+        }
+      yield ()
+  yield matching.size
 
   /**
    * Sends an outgoing command with retries that track responding devices.
@@ -281,6 +327,17 @@ final class LightingLive private[backend](
       }
 
   /**
+   * Registers this controller with the specified device IP.
+   *
+   * @param target The device IP address to register with.
+   */
+  private def registerWith(target: InetAddress): UIO[Unit] =
+    network.localhost.flatMap {
+      case Some((mac, ip)) => network.publish(Outgoing.Send(Set(target), RegistrationRequest(mac, ip)))
+      case None => ZIO.unit
+    }
+
+  /**
    * Notifies active retry listeners that a device at the specified IP address has responded.
    *
    * @param senderIp The IP address of the responding device.
@@ -291,125 +348,39 @@ final class LightingLive private[backend](
       else ZIO.foreachDiscard(listeners)(_(senderIp))
     }
 
-  /**
-   * Executes a partial or full status update on lights matching the specified addresses.
-   *
-   * @param addresses    The addresses of the lights to update.
-   * @param request      The pilot request to send.
-   * @param updateStatus The function to update the local cached status.
-   * @return The number of lights found and updated.
-   */
-  private def executeUpdate(
-    addresses: Iterable[MacAddress],
-    request: SetPilotRequest,
-    updateStatus: Option[Status] => Option[Status]
-  ): UIO[Int] = for
-    targetAddresses <- ZIO.succeed(addresses.toSet)
-    currentRecords <- devices.get
-    matching = targetAddresses.flatMap { addr =>
-      currentRecords.get(addr).flatMap(rec => rec.inetAddress.map(ip => (addr, rec, ip)))
-    }
-    _ <- if matching.isEmpty then ZIO.unit else
-      val ips = matching.map(_._3)
-      for
-        now <- Clock.instant
-        updatedLights <- devices.modify { map =>
-          val updated = matching.foldLeft(map) { case (acc, (addr, rec, _)) =>
-            val newStatus = updateStatus(rec.status)
-            val newRec = rec.copy(status = newStatus)// FIXME, lastSeen = Some(now))
-            acc.updated(addr, newRec)
-          }
-          val lights = matching.flatMap { case (addr, _, _) => updated.get(addr).map(_.toLight) }
-          (lights, updated)
-        }
-        _ <- sendCommand(ips, request)
-        _ <- ZIO.foreachDiscard(updatedLights) { light =>
-          events.publish((light, Some(Source.Udp)))
-        }
-      yield ()
-  yield matching.size
-
-  /**
-   * Registers this controller with the specified device IP.
-   *
-   * @param target The device IP address to register with.
-   */
-  private def registerWith(target: InetAddress): UIO[Unit] =
-    localCredentials.flatMap {
-      case Some((mac, ip)) => network.publish(Outgoing.Send(Set(target), RegistrationRequest(mac, ip)))
-      case None => ZIO.unit
-    }
-
-  /** Resolves the local MAC address and IPv4 address. */
-  private val localCredentials: UIO[Option[(String, String)]] = ZIO.attempt {
-    Option(NetworkInterface.getNetworkInterfaces).flatMap { interfaces =>
-      interfaces.asScala.find { i =>
-        !i.isLoopback && i.isUp && i.getHardwareAddress != null && i.getHardwareAddress.length == 6
-      }.flatMap { i =>
-        val mac = i.getHardwareAddress.map("%02x".format(_)).mkString
-        i.getInetAddresses.asScala.find {
-          case _: Inet4Address => true
-          case _ => false
-        }.map(ip => (mac, ip.getHostAddress))
-      }
-    }
-  }.catchAll(_ => ZIO.none)
-
-  /**
-   * Processes incoming network responses.
-   *
-   * @param incoming The incoming response.
-   */
-  def handleIncoming(incoming: Incoming): UIO[Unit] =
-    notifyResponse(incoming.address) *> {
-      incoming.response match
-        case FirstBeatResponse(Right(payload)) =>
-          handleFirstBeat(incoming.address, payload)
-        case GetSystemConfigResponse(Right(payload)) =>
-          handleSystemConfig(incoming.address, payload)
-        case GetPilotResponse(Right(payload)) =>
-          handleGetPilot(incoming.address, payload)
-        case SyncPilotResponse(Right(payload)) =>
-          handleSyncPilot(incoming.address, payload)
-        case _ =>
-          ZIO.unit
-    }
-
-  /**
-   * Logs validation failures at the info level.
-   *
-   * @param cause The cause containing validation failures.
-   */
-  private def logFailures(cause: Cause[IllegalArgumentException]): UIO[Unit] =
-    cause.failures match
-      case Nil =>
-        cause.defects.headOption match
-          case Some(d) => ZIO.logInfo(Option(d.getMessage).getOrElse(d.toString))
-          case None => ZIO.logInfo("Validation failed.")
-      case failures =>
-        ZIO.foreachDiscard(failures)(err => ZIO.logInfo(Option(err.getMessage).getOrElse(err.toString)))
-
   //
+  // Handling of incoming messages.
   //
-  //
-  
-  private def applyChanges(inetAddress: InetAddress, changes: DeviceChanges): UIO[(DeviceState, DeviceState)] =
-    devices.modify { devices =>
-      val oldDevice = devices.getOrElse(changes.macAddress, DeviceState(changes.macAddress))
-      val newDevice = oldDevice.merge(inetAddress, changes)
-      (oldDevice -> newDevice, devices.updated(changes.macAddress, newDevice))
-    }
-    
-  private def publishEvent(oldDevice: DeviceState, newDevice: DeviceState, source: Option[Source]): UIO[Unit] =
-    if oldDevice.changed(newDevice) then events.publish(newDevice.toLight -> source).ignore else ZIO.unit
 
   /**
-   * Handles a first beat response.
+   * Called when the service receives a message.
+   *
+   * @param message The incoming message.
+   */
+  def onMessage(message: Incoming): UIO[Unit] =
+    notifyResponse(message.address) *> { // FIXME
+      message.response match
+        case FirstBeatResponse(payload) =>
+          payload.fold(onErrorResponse(FirstBeatMethod, _), onFirstBeat(message.address, _))
+        case GetSystemConfigResponse(payload) =>
+          payload.fold(onErrorResponse(GetSystemConfigMethod, _), onGetSystemConfig(message.address, _))
+        case GetPilotResponse(payload) =>
+          payload.fold(onErrorResponse(GetPilotMethod, _), onGetPilot(message.address, _))
+        case SyncPilotResponse(payload) =>
+          payload.fold(onErrorResponse(SyncPilotMethod, _), onSyncPilot(message.address, _))
+        case RegistrationResponse(payload) =>
+          payload.fold(onErrorResponse(RegistrationMethod, _), onRegistration(message.address, _))
+        case SetPilotResponse(payload) =>
+          payload.fold(onErrorResponse(SetPilotMethod, _), onSetPilot(message.address, _))
+    }
+
+  /**
+   * Called when the service receives a first beat response.
    *
    * @param inetAddress The internet address of the device.
-   * @param payload     The first beat payload.
+   * @param payload     The first beat response payload.
    */
-  private def handleFirstBeat(inetAddress: InetAddress, payload: FirstBeatResponsePayload): UIO[Unit] = for
+  private def onFirstBeat(inetAddress: InetAddress, payload: FirstBeatResponsePayload): UIO[Unit] = for
     now <- currentTime
     changes <- DeviceChanges.Settings.make(
       payload.mac,
@@ -420,11 +391,10 @@ final class LightingLive private[backend](
       payload.fwVersion,
       payload.groupId,
       payload.typeId
-    ).asSome.catchAllCause(ZIO.logInfoCause("Unable to interpret first beat changes.", _).map(_ => None))
+    ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret first beat changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
       for
-        (oldDevice, newDevice) <- applyChanges(inetAddress, changes)
-        _ <- publishEvent(oldDevice, newDevice, Some(Source.Heartbeat))
+        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
         _ <- network.publish(Outgoing.Send(Set(inetAddress), GetPilotRequest)) // FIXME Network.publish retries?
         _ <- registerWith(inetAddress) // FIXME What is this doing?
       yield ()
@@ -434,123 +404,135 @@ final class LightingLive private[backend](
   /**
    * Handles a getSystemConfig response.
    *
-   * @param senderIp The IP address of the sender.
-   * @param payload  The getSystemConfig payload.
+   * @param inetAddress The internet address of the device.
+   * @param payload     The getSystemConfig payload.
    */
-  private def handleSystemConfig(senderIp: InetAddress, payload: GetSystemConfigResponsePayload): UIO[Unit] =
-    val validation =
-      MacAddress.make(payload.mac).validate(
-        LightingLive.validateOptional(payload.homeId)(Home.make)
-      ).validate(
-        LightingLive.validateOptional(payload.roomId)(Room.make)
-      ).validate(
-        LightingLive.validateOptional(payload.moduleName)(Module.make)
-      ).validate(
-        LightingLive.validateOptional(payload.fwVersion)(Firmware.make)
-      ).validate(
-        LightingLive.validateOptional(payload.typeId)(Device.make)
-      ).validate(
-        LightingLive.validateOptional(payload.groupId)(Group.make)
-      )
-
-    validation.foldCauseZIO(
-      logFailures,
-      (macAddress, homeOpt, roomOpt, modOpt, fwOpt, devOpt, grpOpt) =>
-        for
-          now <- Clock.instant
-          (updatedLight, needsPilot) <- devices.modify { map =>
-            val existing = map.getOrElse(macAddress, DeviceState(macAddress))
-            val updated = existing.copy(inetAddress = Some(senderIp), signal = existing.signal.orElse(Some(Signal.Medium)), home = homeOpt.orElse(existing.home), room = roomOpt.orElse(existing.room), module = modOpt.orElse(existing.module), firmware = fwOpt.orElse(existing.firmware), group = grpOpt.orElse(existing.group), device = devOpt.orElse(existing.device))// FIXME, lastSeen = Some(now))
-            ((updated.toLight, existing.status.isEmpty), map.updated(macAddress, updated))
-          }
-          _ <- events.publish((updatedLight, None))
-          _ <- if needsPilot then network.publish(Outgoing.Send(Set(senderIp), GetPilotRequest)) else ZIO.unit
-          _ <- registerWith(senderIp)
-        yield ()
-    )
+  private def onGetSystemConfig(inetAddress: InetAddress, payload: GetSystemConfigResponsePayload): UIO[Unit] = for
+    now <- currentTime
+    changes <- DeviceChanges.Settings.make(
+      payload.mac,
+      now,
+      payload.homeId,
+      payload.roomId,
+      payload.moduleName,
+      payload.fwVersion,
+      payload.groupId,
+      payload.typeId
+    ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get system config changes.", _).map(_ => None))
+    _ <- changes.fold(ZIO.unit) { changes =>
+      for
+        newDevice <- applyChanges(inetAddress, changes, None)
+        _ <- if newDevice.status.isEmpty then network.publish(Outgoing.Send(Set(inetAddress), GetPilotRequest)) else ZIO.unit
+        _ <- registerWith(inetAddress)
+      yield ()
+    }
+  yield ()
 
   /**
    * Handles a getPilot response.
    *
-   * @param senderIp The IP address of the sender.
-   * @param payload  The getPilot payload.
+   * @param inetAddress The internet address of the device.
+   * @param payload     The getPilot payload.
    */
-  private def handleGetPilot(senderIp: InetAddress, payload: GetPilotResponsePayload): UIO[Unit] =
-    val validation =
-      MacAddress.make(payload.mac).validate(
-        Signal.make(payload.rssi)
-      ).validate(
-        LightingLive.extractStatus(
-          payload.state,
-          payload.dimming,
-          payload.sceneId,
-          payload.speed,
-          payload.temp,
-          payload.r,
-          payload.g,
-          payload.b,
-          payload.c,
-          payload.w
-        )
-      )
-
-    validation.foldCauseZIO(
-      logFailures,
-      (macAddress, signal, status) =>
-        for
-          now <- Clock.instant
-          (updatedLight, needsConfig) <- devices.modify { map =>
-            val existing = map.getOrElse(macAddress, DeviceState(macAddress))
-            val updated = existing.copy(inetAddress = Some(senderIp), signal = Some(signal), status = Some(status))// FIXME, lastSeen = Some(now))
-            ((updated.toLight, existing.module.isEmpty), map.updated(macAddress, updated))
-          }
-          _ <- events.publish((updatedLight, None))
-          _ <- if needsConfig then network.publish(Outgoing.Send(Set(senderIp), GetSystemConfigRequest)) else ZIO.unit
-          _ <- registerWith(senderIp)
-        yield ()
-    )
+  private def onGetPilot(inetAddress: InetAddress, payload: GetPilotResponsePayload): UIO[Unit] = for
+    now <- currentTime
+    changes <- DeviceChanges.Pilot.make(
+      payload.mac,
+      now,
+      payload.rssi,
+      payload.state,
+      payload.dimming,
+      payload.sceneId,
+      payload.speed,
+      payload.temp,
+      payload.r,
+      payload.g,
+      payload.b,
+      payload.c,
+      payload.w
+    ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get pilot changes.", _).map(_ => None))
+    _ <- changes.fold(ZIO.unit) { changes =>
+      for
+        newDevice <- applyChanges(inetAddress, changes, None)
+        _ <- if newDevice.module.isEmpty then network.publish(Outgoing.Send(Set(inetAddress), GetSystemConfigRequest)) else ZIO.unit
+        _ <- registerWith(inetAddress)
+      yield ()
+    }
+  yield ()
 
   /**
    * Handles a syncPilot response.
    *
-   * @param senderIp The IP address of the sender.
-   * @param payload  The syncPilot payload.
+   * @param inetAddress The internet address of the device.
+   * @param payload     The syncPilot payload.
    */
-  private def handleSyncPilot(senderIp: InetAddress, payload: SyncPilotResponsePayload): UIO[Unit] =
-    val validation =
-      MacAddress.make(payload.mac).validate(
-        Signal.make(payload.rssi)
-      ).validate(
-        LightingLive.validateOptional(payload.src)(Source.make)
-      ).validate(
-        LightingLive.extractStatus(
-          payload.state,
-          payload.dimming,
-          payload.sceneId,
-          payload.speed,
-          payload.temp,
-          payload.r,
-          payload.g,
-          payload.b,
-          payload.c,
-          payload.w
-        )
-      )
+  private def onSyncPilot(inetAddress: InetAddress, payload: SyncPilotResponsePayload): UIO[Unit] = for
+    now <- currentTime
+    changes <- DeviceChanges.Pilot.make(
+      payload.mac,
+      now,
+      payload.rssi,
+      payload.state,
+      payload.dimming,
+      payload.sceneId,
+      payload.speed,
+      payload.temp,
+      payload.r,
+      payload.g,
+      payload.b,
+      payload.c,
+      payload.w
+    ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret sync pilot changes.", _).map(_ => None))
+    source <- payload.src.fold(ZIO.none)(Source.make(_).asSome.catchAllCause(_ => ZIO.none))
+    _ <- changes.fold(ZIO.unit) { changes =>
+      for
+        newDevice <- applyChanges(inetAddress, changes, source)
+        _ <- if newDevice.module.isEmpty then network.publish(Outgoing.Send(Set(inetAddress), GetSystemConfigRequest)) else ZIO.unit
+      yield ()
+    }
+  yield ()
 
-    validation.foldCauseZIO(
-      logFailures,
-      (macAddress, signal, source, status) =>
-        for
-          now <- Clock.instant
-          (updatedLight, needsConfig) <- devices.modify { map =>
-            val existing = map.getOrElse(macAddress, DeviceState(macAddress))
-            val updated = existing.copy(inetAddress = Some(senderIp), signal = Some(signal), status = Some(status))// FIXME, lastSeen = Some(now))
-            ((updated.toLight, existing.module.isEmpty), map.updated(macAddress, updated))
-          }
-          _ <- events.publish((updatedLight, source))
-          _ <- if needsConfig then network.publish(Outgoing.Send(Set(senderIp), GetSystemConfigRequest)) else ZIO.unit
-        yield ()
-    )
+  private def onRegistration(inetAddress: InetAddress, payload: RegistrationResponsePayload): UIO[Unit] =
+    ???
+
+  private def onSetPilot(inetAddress: InetAddress, payload: SetPilotResponsePayload): UIO[Unit] =
+    ???
+
+  /**
+   * Applies a set of changes to a device state in response to a signal from that device.
+   *
+   * @param inetAddress The internet address of the device in question.
+   * @param changes     The changes to apply to the device state.
+   * @param source      The optional source of the event that generated the changes.
+   * @return The new state of the device in question.
+   */
+  private def applyChanges(
+    inetAddress: InetAddress,
+    changes: DeviceChanges,
+    source: Option[Source]
+  ): UIO[DeviceState] = for
+    (oldDevice, newDevice) <- devices.modify { devices =>
+      val oldDevice = devices.getOrElse(changes.macAddress, DeviceState(changes.macAddress))
+      val newDevice = oldDevice.merge(inetAddress, changes)
+      (oldDevice -> newDevice, devices.updated(changes.macAddress, newDevice))
+    }
+    _ <-
+      if newDevice.timeless != oldDevice.timeless then events.publish(newDevice.toLight -> source).ignore
+      else ZIO.unit
+  yield newDevice
+
+  /**
+   * Called when a device has sent an error response.
+   *
+   * @param method The method that the error pertains to.
+   * @param error The payload of the error response.
+   */
+  private def onErrorResponse(method: String, error: ErrorResponsePayload): UIO[Unit] =
+    (error.code, error.message) match
+      case (Some(code), Some(message)) => ZIO.logWarning(s"Received $method response error $code: $message")
+      case (Some(code), None) => ZIO.logWarning(s"Received $method response error $code.")
+      case (None, Some(message)) => ZIO.logWarning(s"Received $method response error: $message")
+      case (None, None) => ZIO.logWarning(s"Received $method response error.")
 
 /**
  * Factory for live lighting services.
@@ -586,92 +568,8 @@ object LightingLive:
     devices <- Ref.make(Map.empty[MacAddress, DeviceState])
     listeners <- Ref.make(Set.empty[InetAddress => UIO[Unit]])
     service = LightingLive(retryBackoffs.map(Duration.fromScala), clock, network, hub, devices, listeners)
-    _ <- network.subscribe.flatMap(_.foreach(service.handleIncoming).forkScoped)
+    _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
     discoveryIntervalZio = Duration.fromScala(discoveryInterval)
     _ <- service.discover
     _ <- service.discover.repeat(Schedule.spaced(discoveryIntervalZio)).delay(discoveryIntervalZio).forkScoped
   yield service
-
-  /**
-   * Validates an optional value using the specified validation function.
-   *
-   * @tparam A The type of the input value.
-   * @tparam B The type of the validated value.
-   * @param value The optional value to validate.
-   * @param f     The validation function.
-   * @return The validated optional value.
-   */
-  def validateOptional[A, B](
-    value: Option[A]
-  )(f: A => IO[IllegalArgumentException, B]): IO[IllegalArgumentException, Option[B]] =
-    value match
-      case Some(a) => f(a).asSome
-      case None => ZIO.none
-
-  /**
-   * Extracts a Status from raw pilot parameters.
-   *
-   * @param state   Whether the light is on.
-   * @param dimming The brightness level if present.
-   * @param sceneId The scene ID if present.
-   * @param speed   The dynamic scene speed if present.
-   * @param temp    The color temperature if present.
-   * @param r       The red component if present.
-   * @param g       The green component if present.
-   * @param b       The blue component if present.
-   * @param c       The cool white component if present.
-   * @param w       The warm white component if present.
-   * @return The extracted Status.
-   */
-  def extractStatus(
-    state: Boolean,
-    dimming: Option[Int],
-    sceneId: Option[Int],
-    speed: Option[Int],
-    temp: Option[Int],
-    r: Option[Int],
-    g: Option[Int],
-    b: Option[Int],
-    c: Option[Int],
-    w: Option[Int]
-  ): IO[IllegalArgumentException, Status] =
-    if !state then
-      ZIO.succeed(Status.Disabled)
-    else
-      for
-        brightness <- dimming.fold(ZIO.succeed(Brightness.Brightest))(Brightness.make)
-        status <- sceneId match
-          case Some(id) =>
-            ??? : IO[IllegalArgumentException, Status]
-          case None =>
-            ??? : IO[IllegalArgumentException, Status]
-      yield status
-      //
-      val brightnessValidation = validateOptional(dimming)(Brightness.make).map(_.getOrElse(Brightness.Brightest))
-      val contentValidation: IO[IllegalArgumentException, Brightness => Status] =
-        sceneId match
-          case Some(id) =>
-            Scene.make(id).validate(validateOptional(speed)(Speed.make)).flatMap {
-              case (dynamic: Scene.Dynamic, speedOpt) =>
-                ZIO.succeed(Status.Defined.Dynamic(dynamic, speedOpt.getOrElse(Speed.Medium), _))
-              case (static: Scene.Static, _) =>
-                ZIO.succeed(Status.Defined.Static(static, _))
-            }
-          case None =>
-            temp match
-              case Some(temperatureValue) =>
-                Temperature.make(temperatureValue).map(t => Status.White(t, _))
-              case None =>
-                if r.isDefined || g.isDefined || b.isDefined || c.isDefined || w.isDefined then
-                  Color.make(
-                    r.getOrElse(0),
-                    g.getOrElse(0),
-                    b.getOrElse(0),
-                    c.getOrElse(0),
-                    w.getOrElse(0)
-                  ).map(col => (b: Brightness) => Status.Custom(col, b))
-                else
-                  ZIO.succeed(Status.White(Temperature.Medium, _))
-      brightnessValidation.validate(contentValidation).map { (b, makeStatus) =>
-        makeStatus(b)
-      }

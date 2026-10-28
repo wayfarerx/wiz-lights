@@ -27,7 +27,6 @@ import model.*
  *
  * @param macAddress  The MAC address of the light.
  * @param inetAddress The IP address of the light if known.
- * @param timestamp   The timestamp when the light was last seen if ever.
  * @param status      The status of the light if known.
  * @param signal      The signal strength of the light if known.
  * @param home        The home the light belongs to if known.
@@ -36,11 +35,11 @@ import model.*
  * @param firmware    The firmware version of the light if known.
  * @param group       The group the light belongs to if known.
  * @param device      The device type ID of the light if known.
+ * @param lastSeen    The timestamp when the light was last seen if ever.
  */
 private case class DeviceState(
   macAddress: MacAddress,
   inetAddress: Option[InetAddress] = None,
-  timestamp: Option[Timestamp] = None,
   signal: Option[Signal] = None,
   status: Option[Status] = None,
   home: Option[Home] = None,
@@ -48,16 +47,12 @@ private case class DeviceState(
   module: Option[Module] = None,
   firmware: Option[Firmware] = None,
   group: Option[Group] = None,
-  device: Option[Device] = None
+  device: Option[Device] = None,
+  lastSeen: Option[Long] = None
 ):
 
-  /**
-   * Returns true if there has been changes over time between this state and that state.
-   *
-   * @param that The state to compare this state to.
-   */
-  def changed(that: DeviceState): Boolean =
-    copy(timestamp = None) != that.copy(timestamp = None)
+  /** Returns a copy of this device state with no last seen timestamp. */
+  def timeless: DeviceState = copy(lastSeen = None)
 
   /**
    * Merges a set of changes into this device.
@@ -79,13 +74,13 @@ private case class DeviceState(
    */
   private def merge(inetAddress: InetAddress, changes: DeviceChanges.Settings): DeviceState = copy(
     inetAddress = Some(inetAddress),
-    timestamp = Some(changes.timestamp),
     home = changes.home.orElse(home),
     room = changes.room.orElse(room),
     module = changes.module.orElse(module),
     firmware = changes.firmware.orElse(firmware),
     group = changes.group.orElse(group),
-    device = changes.device.orElse(device)
+    device = changes.device.orElse(device),
+    lastSeen = Some(changes.timestamp)
   )
 
   /**
@@ -130,9 +125,9 @@ private case class DeviceState(
                       Status.White(Temperature.Medium, brightness)
     copy(
       inetAddress = Some(inetAddress),
-      timestamp = Some(changes.timestamp),
       signal = Some(changes.signal),
-      status = Some(merged)
+      status = Some(merged),
+      lastSeen = Some(changes.timestamp)
     )
 
   /** Returns this device state as a light. */
@@ -148,8 +143,7 @@ private case class DeviceState(
         module = module,
         firmware = firmware,
         group = group,
-        device = device,
-        timestamp = timestamp
+        device = device
       )
     }
   )

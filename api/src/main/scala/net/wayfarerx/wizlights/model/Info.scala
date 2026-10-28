@@ -32,7 +32,6 @@ import io.circe.{Decoder, DecodingFailure, Encoder, HCursor}
  * @param firmware  The firmware version of the light if available.
  * @param group     The group the light belongs to if defined.
  * @param device    The device type ID of the light if available.
- * @param timestamp The timestamp when the light was last seen if available.
  */
 case class Info(
   ipAddress: IpAddress,
@@ -42,8 +41,7 @@ case class Info(
   module: Option[Module] = None,
   firmware: Option[Firmware] = None,
   group: Option[Group] = None,
-  device: Option[Device] = None,
-  timestamp: Option[Timestamp] = None
+  device: Option[Device] = None
 )
 
 /**
@@ -53,7 +51,7 @@ object Info:
 
   /** The circe encoder for light information. */
   given Encoder[Info] =
-    Encoder.forProduct9(
+    Encoder.forProduct8(
       "ipAddress",
       "signal",
       "home",
@@ -61,8 +59,7 @@ object Info:
       "module",
       "firmware",
       "group",
-      "device",
-      "timestamp"
+      "device"
     )((info: Info) => (
       info.ipAddress,
       info.signal,
@@ -71,13 +68,12 @@ object Info:
       info.module,
       info.firmware,
       info.group,
-      info.device,
-      info.timestamp
+      info.device
     )).mapJsonObject(_.filter(!_._2.isNull))
 
   /** The circe decoder for light information. */
   given Decoder[Info] = new Decoder[Info]:
-    private val productDecoder = Decoder.forProduct9(
+    private val productDecoder = Decoder.forProduct8(
       "ipAddress",
       "signal",
       "home",
@@ -86,7 +82,6 @@ object Info:
       "firmware",
       "group",
       "device",
-      "timestamp"
     )(Info.apply)
 
     override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, Info] =

@@ -18,14 +18,13 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import java.net.{InetAddress, NetworkInterface}
+import java.net.{Inet4Address, InetAddress, NetworkInterface}
 
 import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.{EventLoopGroup, MultiThreadIoEventLoopGroup}
-
 import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Schedule, Scope, Task, UIO, URIO, ZIO, ZLayer}
 import zio.stream.{UStream, ZStream}
 
@@ -33,6 +32,9 @@ import zio.stream.{UStream, ZStream}
  * A service that manages interaction with the network.
  */
 trait Network:
+
+  /** Returns the local MAC address and internet address if available. */
+  def localhost: UIO[Option[(String, String)]]
 
   /**
    * Publishes a command message on the command port.
@@ -52,10 +54,19 @@ trait Network:
 /**
  * The live implementation of the network service.
  *
+ * @param local The cached local host MAC address and internet address.
  * @param outgoing The queue of outgoing messages.
  * @param incoming The hub of incoming messages.
  */
-final class NetworkLive private(outgoing: Queue[Outgoing], incoming: Hub[Incoming]) extends Network:
+final class NetworkLive private(
+  local: Ref[Option[(String, String)]],
+  outgoing: Queue[Outgoing],
+  incoming: Hub[Incoming]
+) extends Network:
+
+  /* Return the local MAC address and internet address if available. */
+  override def localhost: UIO[Option[(String, String)]] =
+    local.get
 
   /* Publish a command message on the command port. */
   override def publish(message: Outgoing): UIO[Unit] =
@@ -115,13 +126,14 @@ object NetworkLive:
       received = incoming.publish(_: Incoming).ignore
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
-      refreshBroadcastInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
+      refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
+      localhost <- Ref.make[Option[(String, String)]](None)
       broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
-      _ <- refreshBroadcastAddresses(broadcastAddresses)
-      _ <- refreshBroadcastAddresses(broadcastAddresses)
-        .repeat(Schedule.spaced(refreshBroadcastInterval)).delay(refreshBroadcastInterval).forkScoped
+      _ <- refreshNetworkInfo(localhost, broadcastAddresses)
+      _ <- refreshNetworkInfo(localhost, broadcastAddresses)
+        .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
       _ <- ZStream.fromQueue(outgoing).foreach(write(broadcastAddresses, commandSocket, _)).forkScoped
-    yield NetworkLive(outgoing, incoming)
+    yield NetworkLive(localhost, outgoing, incoming)
 
   /**
    * Acquires an event loop group.
@@ -140,18 +152,35 @@ object NetworkLive:
     ZIO.attemptBlocking(group.close()).ignore
 
   /**
-   * Refreshes the specified set of broadcast addresses.
+   * Refreshes the cached network information.
    *
+   * @param localhostRef The reference to the current local host information.
    * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
    */
-  private def refreshBroadcastAddresses(broadcastAddressesRef: Ref[Set[InetAddress]]): UIO[Unit] = for
+  private def refreshNetworkInfo(
+    localhostRef: Ref[Option[(String, String)]],
+    broadcastAddressesRef: Ref[Set[InetAddress]]
+  ): UIO[Unit] = for
     interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toSeq))
-      .catchAllCause(c => ZIO.logInfoCause("Failed to list the network interfaces.", c).map (_ => Nil))
+      .catchAllCause(ZIO.logInfoCause("Cannot list the network interfaces.", _).map(_ => Seq.empty[NetworkInterface]))
     availableInterfaces <- ZIO.filter(interfaces) { i =>
-      ZIO.attempt(i.isUp).catchAllCause { c =>
-        ZIO.logInfoCause(s"Unable to query the network interface: ${i.getName}.", c).map(_ => false)
+      ZIO.attempt(!i.isLoopback && i.isUp).catchAllCause {
+        ZIO.logInfoCause(s"Unable to query the network interface: ${i.getName}.", _).map(_ => false)
       }
     }
+    localhost <- ZIO.collectFirst(availableInterfaces) { i =>
+      for
+        mac <- ZIO.attempt(i.getHardwareAddress).map {
+          Option(_).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_))
+        }.catchAllCause(ZIO.logInfoCause(s"Failed to find the hardware address of: ${i.getName}.", _).map (_ => None))
+      yield mac.flatMap { m =>
+        i.getInetAddresses.asScala.find {
+          case _: Inet4Address => true
+          case _ => false
+        }.map(m -> _.getHostAddress)
+      }
+    }
+    _ <- localhostRef.set(localhost)
     interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
     broadcastAddresses <- interfaceAddresses.flatMap(Option apply _.getBroadcast) match
       case Nil => DefaultBroadcastAddresses.catchAllCause {

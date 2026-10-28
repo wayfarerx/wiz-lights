@@ -24,36 +24,33 @@ import io.circe.{Decoder, DecodingFailure}
 /**
  * Base type for responses.
  */
-sealed trait Response
+sealed trait Response:
+
+  /** The type of success payload this response carries. */
+  type Payload
+
+  /** The payload of this response. */
+  def payload: Either[ErrorResponsePayload, Payload]
 
 /**
  * Definitions associated with responses.
  */
 object Response:
 
-  /** The index of decoders by method name. */
-  private val decoders = Map[String, Decoder[? <: Response]](
-    FirstBeatMethod ->
-      payloadDecoder[FirstBeatResponse, FirstBeatResponsePayload](ParamsKey, FirstBeatResponse.apply),
-    GetPilotMethod ->
-      payloadDecoder[GetPilotResponse, GetPilotResponsePayload](ResultKey, GetPilotResponse.apply),
-    GetSystemConfigMethod ->
-      payloadDecoder[GetSystemConfigResponse, GetSystemConfigResponsePayload](ResultKey, GetSystemConfigResponse.apply),
-    RegistrationMethod ->
-      payloadDecoder[RegistrationResponse, RegistrationResponsePayload](ResultKey, RegistrationResponse.apply),
-    SetPilotMethod ->
-      payloadDecoder[SetPilotResponse, SetPilotResponsePayload](ResultKey, SetPilotResponse.apply),
-    SyncPilotMethod ->
-      payloadDecoder[SyncPilotResponse, SyncPilotResponsePayload](ParamsKey, SyncPilotResponse.apply)
-  )
-
   /** General purpose response decoder. */
   given Decoder[Response] = Decoder.instance { cursor =>
     for
       method <- cursor.downField(MethodKey).as[String]
-      decoder <- decoders.get(method).toRight(DecodingFailure(DecodingFailure.Reason.CustomReason(
-        s"""The value "$method" is not supported as a value for the "$MethodKey" key."""
-      ), cursor))
+      decoder <- method match
+        case FirstBeatMethod => Right(Decoder[FirstBeatResponse])
+        case GetPilotMethod => Right(Decoder[GetPilotResponse])
+        case GetSystemConfigMethod => Right(Decoder[GetSystemConfigResponse])
+        case RegistrationMethod => Right(Decoder[RegistrationResponse])
+        case SetPilotMethod => Right(Decoder[SetPilotResponse])
+        case SyncPilotMethod => Right(Decoder[SyncPilotResponse])
+        case invalid => Left(DecodingFailure(DecodingFailure.Reason.CustomReason(
+          s"""The value "$invalid" is not supported as a value for the "$MethodKey" key."""
+        ), cursor))
       result <- decoder(cursor)
     yield result
   }
@@ -89,19 +86,6 @@ object Response:
       yield result
     }
 
-  /**
-   * Creates a decoder for a response type from a payload type using the default "result" payload key.
-   *
-   * @tparam R The type of response being decoded.
-   * @tparam P The type of result payload being decoded.
-   * @param f The function that creates a response from an optional correlation ID and payload.
-   * @return A decoder for a response type from a payload type.
-   */
-  private[protocol] def payloadDecoder[R <: Response, P: Decoder](
-    f: Either[ErrorResponsePayload, P] => R
-  ): Decoder[R] =
-    payloadDecoder(ResultKey, f)
-
 /**
  * The first beat response.
  *
@@ -109,7 +93,10 @@ object Response:
  */
 case class FirstBeatResponse(
   payload: Either[ErrorResponsePayload, FirstBeatResponsePayload]
-) extends Response
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = FirstBeatResponsePayload
 
 /**
  * Definitions associated with first beat responses.
@@ -126,7 +113,10 @@ object FirstBeatResponse:
  */
 case class GetPilotResponse(
   payload: Either[ErrorResponsePayload, GetPilotResponsePayload]
-) extends Response
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = GetPilotResponsePayload
 
 /**
  * Definitions associated with get pilot responses.
@@ -143,7 +133,10 @@ object GetPilotResponse:
  */
 case class GetSystemConfigResponse(
   payload: Either[ErrorResponsePayload, GetSystemConfigResponsePayload]
-) extends Response
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = GetSystemConfigResponsePayload
 
 /**
  * Definitions associated with get system config responses.
@@ -160,7 +153,10 @@ object GetSystemConfigResponse:
  */
 case class RegistrationResponse(
   payload: Either[ErrorResponsePayload, RegistrationResponsePayload]
-) extends Response
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = RegistrationResponsePayload
 
 /**
  * Definitions associated with registration responses.
@@ -177,7 +173,10 @@ object RegistrationResponse:
  */
 case class SetPilotResponse(
   payload: Either[ErrorResponsePayload, SetPilotResponsePayload]
-) extends Response
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = SetPilotResponsePayload
 
 /**
  * Definitions associated with set pilot responses.
@@ -194,7 +193,10 @@ object SetPilotResponse:
  */
 case class SyncPilotResponse(
   payload: Either[ErrorResponsePayload, SyncPilotResponsePayload]
-) extends Response
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = SyncPilotResponsePayload
 
 /**
  * Definitions associated with sync pilot responses.
