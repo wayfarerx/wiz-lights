@@ -24,7 +24,10 @@ import io.circe.generic.semiauto.deriveEncoder
 /**
  * Base type for requests.
  */
-sealed trait Request
+sealed trait Request:
+
+  /** The optional correlation ID. */
+  def id: Option[Int]
 
 /**
  * Definitions associated with requests.
@@ -33,8 +36,8 @@ object Request:
   
   /** The generic request encoder. */
   given Encoder[Request] = Encoder.instance {
-    case GetPilotRequest => GetPilotRequest.encoder(GetPilotRequest)
-    case GetSystemConfigRequest => GetSystemConfigRequest.encoder(GetSystemConfigRequest)
+    case request: GetPilotRequest => GetPilotRequest.encoder(request)
+    case request: GetSystemConfigRequest => GetSystemConfigRequest.encoder(request)
     case request: RegistrationRequest => RegistrationRequest.encoder(request)
     case request: SetPilotRequest => SetPilotRequest.encoder(request)
   }
@@ -48,27 +51,46 @@ object Request:
    * @return The request encoder wrapped in the protocol envelope.
    */
   private[protocol] def encoding[T <: Request](method: String, encoder: Encoder[T]): Encoder[T] =
+    val jsonMethod = Some(MethodKey -> Json.fromString(method))
     encoder.mapJson {
       _.mapObject { json =>
-        JsonObject(MethodKey -> Json.fromString(method) :: ParamsKey -> json.toJson.dropNullValues :: Nil *)
-      }
+        JsonObject(Seq(
+          json(IdKey).map(IdKey -> _),
+          jsonMethod,
+          Some(ParamsKey -> json.remove(IdKey).toJson.dropNullValues)
+        ).flatten *)
+      }.dropNullValues
     }
 
 /**
  * The get pilot request.
+ *
+ * @param id The optional correlation ID.
  */
-case object GetPilotRequest extends Request:
+case class GetPilotRequest(id: Option[Int] = None) extends Request
+
+/**
+ * Definitions associated with get pilot requests.
+ */
+object GetPilotRequest:
 
   /** The get pilot request encoder. */
-  given encoder: Encoder[GetPilotRequest.type] = Request.encoding(GetPilotMethod, deriveEncoder)
+  given encoder: Encoder[GetPilotRequest] = Request.encoding(GetPilotMethod, deriveEncoder)
 
 /**
  * The get system config request.
+ *
+ * @param id The optional correlation ID.
  */
-case object GetSystemConfigRequest extends Request:
+case class GetSystemConfigRequest(id: Option[Int] = None) extends Request
+
+/**
+ * Definitions associated with get system config requests.
+ */
+object GetSystemConfigRequest:
 
   /** The get system config request encoder. */
-  given encoder: Encoder[GetSystemConfigRequest.type] = Request.encoding(GetSystemConfigMethod, deriveEncoder)
+  given encoder: Encoder[GetSystemConfigRequest] = Request.encoding(GetSystemConfigMethod, deriveEncoder)
 
 /**
  * The registration request.
@@ -76,11 +98,13 @@ case object GetSystemConfigRequest extends Request:
  * @param phoneMac The MAC address of the device registering for updates.
  * @param phoneIp  The IP address of the device registering for updates.
  * @param register True to register for updates, false to deregister.
+ * @param id       The optional correlation ID.
  */
 case class RegistrationRequest(
   phoneMac: String,
   phoneIp: String,
-  register: Boolean = true
+  register: Boolean = true,
+  id: Option[Int] = None
 ) extends Request
 
 /**
@@ -104,6 +128,7 @@ object RegistrationRequest:
  * @param b       The blue color component (0 - 255).
  * @param c       The cool white component (0 - 255).
  * @param w       The warm white component (0 - 255).
+ * @param id      The optional correlation ID.
  */
 case class SetPilotRequest(
   state: Option[Boolean] = None,
@@ -115,7 +140,8 @@ case class SetPilotRequest(
   g: Option[Int] = None,
   b: Option[Int] = None,
   c: Option[Int] = None,
-  w: Option[Int] = None
+  w: Option[Int] = None,
+  id: Option[Int] = None
 ) extends Request
 
 /**

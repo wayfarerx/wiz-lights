@@ -29,6 +29,9 @@ sealed trait Response:
   /** The type of success payload this response carries. */
   type Payload
 
+  /** The optional correlation ID. */
+  def id: Option[Int]
+
   /** The payload of this response. */
   def payload: Either[ErrorResponsePayload, Payload]
 
@@ -66,15 +69,16 @@ object Response:
    */
   private[protocol] def payloadDecoder[R <: Response, P: Decoder](
     payloadKey: String,
-    f: Either[ErrorResponsePayload, P] => R
+    f: (Either[ErrorResponsePayload, P], Option[Int]) => R
   ): Decoder[R] =
     Decoder.instance { cursor =>
+      val id = cursor.downField(IdKey).as[Int].toOption
       for
         result <- (cursor.downField(payloadKey).success, cursor.downField(ErrorKey).success) match
           case (Some(result), None) =>
-            result.as[P].map(p => f(Right(p)))
+            result.as[P].map(p => f(Right(p), id))
           case (None, Some(error)) =>
-            error.as[ErrorResponsePayload].map(e => f(Left(e)))
+            error.as[ErrorResponsePayload].map(e => f(Left(e), id))
           case (Some(_), Some(_)) =>
             Left(DecodingFailure(DecodingFailure.Reason.CustomReason(
               s"""Only one of the "$payloadKey" key or the "$ErrorKey" key may be present."""
@@ -90,9 +94,11 @@ object Response:
  * The first beat response.
  *
  * @param payload Either an error payload or the first beat payload.
+ * @param id The optional correlation ID.
  */
 case class FirstBeatResponse(
-  payload: Either[ErrorResponsePayload, FirstBeatResponsePayload]
+  payload: Either[ErrorResponsePayload, FirstBeatResponsePayload],
+  id: Option[Int] = None
 ) extends Response:
 
   /* The type of success payload this response carries. */
@@ -110,9 +116,11 @@ object FirstBeatResponse:
  * The get pilot response.
  *
  * @param payload Either an error payload or the get pilot payload.
+ * @param id The optional correlation ID.
  */
 case class GetPilotResponse(
-  payload: Either[ErrorResponsePayload, GetPilotResponsePayload]
+  payload: Either[ErrorResponsePayload, GetPilotResponsePayload],
+  id: Option[Int] = None
 ) extends Response:
 
   /* The type of success payload this response carries. */
@@ -130,9 +138,11 @@ object GetPilotResponse:
  * The get system config response.
  *
  * @param payload Either an error payload or the get system config payload.
+ * @param id The optional correlation ID.
  */
 case class GetSystemConfigResponse(
-  payload: Either[ErrorResponsePayload, GetSystemConfigResponsePayload]
+  payload: Either[ErrorResponsePayload, GetSystemConfigResponsePayload],
+  id: Option[Int] = None
 ) extends Response:
 
   /* The type of success payload this response carries. */
@@ -150,9 +160,11 @@ object GetSystemConfigResponse:
  * The registration response.
  *
  * @param payload Either an error payload or the registration payload.
+ * @param id The optional correlation ID.
  */
 case class RegistrationResponse(
-  payload: Either[ErrorResponsePayload, RegistrationResponsePayload]
+  payload: Either[ErrorResponsePayload, RegistrationResponsePayload],
+  id: Option[Int] = None
 ) extends Response:
 
   /* The type of success payload this response carries. */
@@ -170,9 +182,11 @@ object RegistrationResponse:
  * The set pilot response.
  *
  * @param payload Either an error payload or the set pilot payload.
+ * @param id The optional correlation ID.
  */
 case class SetPilotResponse(
-  payload: Either[ErrorResponsePayload, SetPilotResponsePayload]
+  payload: Either[ErrorResponsePayload, SetPilotResponsePayload],
+  id: Option[Int] = None
 ) extends Response:
 
   /* The type of success payload this response carries. */
@@ -190,9 +204,11 @@ object SetPilotResponse:
  * The sync pilot response.
  *
  * @param payload Either an error payload or the sync pilot payload.
+ * @param id The optional correlation ID.
  */
 case class SyncPilotResponse(
-  payload: Either[ErrorResponsePayload, SyncPilotResponsePayload]
+  payload: Either[ErrorResponsePayload, SyncPilotResponsePayload],
+  id: Option[Int] = None
 ) extends Response:
 
   /* The type of success payload this response carries. */

@@ -33,6 +33,7 @@ object ResponseSpec extends ZIOSpecDefault:
     test("decode GetPilotResponse successfully") {
       val jsonString =
         """{
+          |  "id": 42,
           |  "method": "getPilot",
           |  "env": "pro",
           |  "result": {
@@ -59,8 +60,9 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case GetPilotResponse(Right(payload)) =>
-            payload.mac == "0123456789ab" &&
+          case GetPilotResponse(Right(payload), id) =>
+            id.contains(42) &&
+              payload.mac == "0123456789ab" &&
               payload.rssi == -55 &&
               payload.state &&
               payload.dimming.contains(85) &&
@@ -78,6 +80,7 @@ object ResponseSpec extends ZIOSpecDefault:
     test("decode GetSystemConfigResponse successfully") {
       val jsonString =
         """{
+          |  "id": 42,
           |  "method": "getSystemConfig",
           |  "env": "pro",
           |  "result": {
@@ -103,8 +106,9 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case GetSystemConfigResponse(Right(payload)) =>
-            payload.mac == "0123456789ab" &&
+          case GetSystemConfigResponse(Right(payload), id) =>
+            id.contains(42) &&
+              payload.mac == "0123456789ab" &&
               payload.homeId.contains(123456) &&
               payload.roomId.contains(654321) &&
               payload.rgn.contains("us") &&
@@ -121,6 +125,7 @@ object ResponseSpec extends ZIOSpecDefault:
     test("decode RegistrationResponse successfully") {
       val jsonString =
         """{
+          |  "id": 42,
           |  "method": "registration",
           |  "env": "pro",
           |  "result": {
@@ -136,13 +141,14 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case RegistrationResponse(Right(payload)) => payload.success
+          case RegistrationResponse(Right(payload), id) => payload.success && id.contains(42)
           case _ => false
       )
     },
     test("decode SetPilotResponse successfully") {
       val jsonString =
         """{
+          |  "id": 42,
           |  "method": "setPilot",
           |  "env": "pro",
           |  "result": {
@@ -158,7 +164,7 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case SetPilotResponse(Right(payload)) => payload.success
+          case SetPilotResponse(Right(payload), id) => payload.success && id.contains(42)
           case _ => false
       )
     },
@@ -182,8 +188,9 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case FirstBeatResponse(Right(payload)) =>
-            payload.mac == "0123456789ab" &&
+          case FirstBeatResponse(Right(payload), id) =>
+            id.isEmpty &&
+              payload.mac == "0123456789ab" &&
               payload.homeId.contains(789012) &&
               payload.fwVersion.contains("1.26.0") &&
               payload.roomId.isEmpty
@@ -213,8 +220,9 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case SyncPilotResponse(Right(payload)) =>
-            payload.mac == "0123456789ab" &&
+          case SyncPilotResponse(Right(payload), id) =>
+            id.isEmpty &&
+              payload.mac == "0123456789ab" &&
               payload.rssi == -60 &&
               payload.state &&
               payload.src.contains("udp") &&
@@ -227,6 +235,7 @@ object ResponseSpec extends ZIOSpecDefault:
     test("decode error response payload") {
       val jsonString =
         """{
+          |  "id": 42,
           |  "method": "setPilot",
           |  "env": "pro",
           |  "error": {
@@ -243,8 +252,9 @@ object ResponseSpec extends ZIOSpecDefault:
         decodedSpecificResponse.isRight,
         decodedResponse == decodedSpecificResponse,
         decodedResponse.toOption.get match
-          case SetPilotResponse(Left(errorPayload)) =>
-            errorPayload.code.contains(-32602) &&
+          case SetPilotResponse(Left(errorPayload), id) =>
+            id.contains(42) &&
+              errorPayload.code.contains(-32602) &&
               errorPayload.message.contains("Invalid params")
           case _ => false
       )

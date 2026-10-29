@@ -25,6 +25,9 @@ package object protocol:
   /** The name of the "error" key. */
   val ErrorKey = "error"
 
+  /** The name of the "id" key. */
+  val IdKey = "id"
+
   /** The name of the "method" key. */
   val MethodKey = "method"
 
