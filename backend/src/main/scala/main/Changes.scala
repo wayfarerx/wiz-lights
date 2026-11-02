@@ -18,16 +18,15 @@ package net.wayfarerx.wizlights
 package backend
 package main
 
-import java.net.InetAddress
-
 import zio.{IO, ZIO}
 
 import model.*
+import service.Update
 
 /**
  * Base trait for changes detected on a device.
  */
-private sealed trait DeviceChanges:
+private sealed trait Changes:
 
   /** The MAC address of the device. */
   def macAddress: MacAddress
@@ -38,7 +37,20 @@ private sealed trait DeviceChanges:
 /**
  * The supported device change types.
  */
-private object DeviceChanges:
+private object Changes:
+
+  /**
+   * Details of an update submitted to the service.
+   *
+   * @param macAddress The MAC address of the device.
+   * @param timestamp  The timestamp when the device change was observed.
+   * @param update     The update that was submitted by the service.
+   */
+  case class Updates(
+    macAddress: MacAddress,
+    timestamp: Long,
+    update: Update
+  ) extends Changes
 
   /**
    * Details of settings changes reported by a light.
@@ -52,7 +64,7 @@ private object DeviceChanges:
    * @param group      The group the light belongs to if defined.
    * @param device     The device type ID of the light if available.
    */
-  final case class Settings(
+  case class Settings private(
     macAddress: MacAddress,
     timestamp: Long,
     home: Option[Home] = None,
@@ -61,7 +73,7 @@ private object DeviceChanges:
     firmware: Option[Firmware] = None,
     group: Option[Group] = None,
     device: Option[Device] = None
-  ) extends DeviceChanges
+  ) extends Changes
 
   /**
    * Factory for settings changes.
@@ -114,7 +126,7 @@ private object DeviceChanges:
    * @param speed       The dynamic scene speed of the light if known.
    * @param color       The color of the light if known.
    */
-  final case class Pilot(
+  case class Pilot private(
     macAddress: MacAddress,
     timestamp: Long,
     signal: Signal,
@@ -124,7 +136,7 @@ private object DeviceChanges:
     scene: Option[Scene] = None,
     speed: Option[Speed] = None,
     color: Option[Color] = None
-  ) extends DeviceChanges
+  ) extends Changes
 
   /**
    * Factory for pilot changes.

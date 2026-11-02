@@ -16,41 +16,37 @@
 
 package net.wayfarerx.wizlights
 package backend
+package protocol
 
-/**
- * Shared definitions in the JSON package.
- */
-package object protocol:
+/** The name of the "error" key. */
+val ErrorKey = "error"
 
-  /** The name of the "error" key. */
-  val ErrorKey = "error"
+/** The name of the "id" key. */
+val IdKey = "id"
 
-  /** The name of the "id" key. */
-  val IdKey = "id"
+/** The name of the "method" key. */
+val MethodKey = "method"
 
-  /** The name of the "method" key. */
-  val MethodKey = "method"
+/** The name of the "params" key. */
+val ParamsKey = "params"
 
-  /** The name of the "params" key. */
-  val ParamsKey = "params"
+/** The name of the "result" key. */
+val ResultKey = "result"
 
-  /** The name of the "result" key. */
-  val ResultKey = "result"
+/** The name of the "firstBeat" method. */
+val FirstBeatMethod = "firstBeat"
 
-  /** The name of the "firstBeat" method. */
-  val FirstBeatMethod = "firstBeat"
-  
-  /** The name of the "getPilot" method. */
-  val GetPilotMethod = "getPilot"
+/** The name of the "getPilot" method. */
+val GetPilotMethod = "getPilot"
 
-  /** The name of the "getSystemConfig" method. */
-  val GetSystemConfigMethod = "getSystemConfig"
+/** The name of the "getSystemConfig" method. */
+val GetSystemConfigMethod = "getSystemConfig"
 
-  /** The name of the "registration" method. */
-  val RegistrationMethod = "registration"
-  
-  /** The name of the "setPilot" method. */
-  val SetPilotMethod = "setPilot"
+/** The name of the "registration" method. */
+val RegistrationMethod = "registration"
 
-  /** The name of the "syncPilot" method. */
-  val SyncPilotMethod = "syncPilot"
+/** The name of the "setPilot" method. */
+val SetPilotMethod = "setPilot"
+
+/** The name of the "syncPilot" method. */
+val SyncPilotMethod = "syncPilot"

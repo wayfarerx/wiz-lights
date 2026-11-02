@@ -56,12 +56,12 @@ object Update:
   case class Color(color: model.Color) extends Update
 
   /**
-   * An update to the static scene and speed of a light.
+   * An update to the scene of a light.
    *
    * @param scene The scene to set the light to.
    * 
    */
-  case class Static(scene: model.Scene.Static) extends Update
+  case class Scene(scene: model.Scene) extends Update
 
   /**
    * An update to the dynamic scene and speed of a light.

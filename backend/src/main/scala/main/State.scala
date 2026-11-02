@@ -21,6 +21,7 @@ package main
 import java.net.InetAddress
 
 import model.*
+import service.*
 
 /**
  * Internal record representing the accumulated state of a light.
@@ -37,7 +38,7 @@ import model.*
  * @param device      The device type ID of the light if known.
  * @param lastSeen    The timestamp when the light was last seen if ever.
  */
-private case class DeviceState(
+private case class State(
   macAddress: MacAddress,
   inetAddress: Option[InetAddress] = None,
   signal: Option[Signal] = None,
@@ -52,7 +53,7 @@ private case class DeviceState(
 ):
 
   /** Returns a copy of this device state with no last seen timestamp. */
-  def timeless: DeviceState = copy(lastSeen = None)
+  def timeless: State = copy(lastSeen = None)
 
   /**
    * Merges a set of changes into this device.
@@ -61,9 +62,59 @@ private case class DeviceState(
    * @param changes     The changes to merge into this device.
    * @return The merged device state.
    */
-  def merge(inetAddress: InetAddress, changes: DeviceChanges): DeviceState = changes match
-    case settings: DeviceChanges.Settings => merge(inetAddress, settings)
-    case pilot: DeviceChanges.Pilot => merge(inetAddress, pilot)
+  def merge(inetAddress: InetAddress, changes: Changes): State = changes match
+    case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
+    case settings: Changes.Settings => mergeSettings(inetAddress, settings)
+    case pilot: Changes.Pilot => mergePilot(inetAddress, pilot)
+
+  /**
+   * Merges an update change into this device.
+   *
+   * @param inetAddress The internet address the changes originated from.
+   * @param changes     The update changes to merge into this device.
+   * @return The merged device state.
+   */
+  private def mergeUpdates(inetAddress: InetAddress, changes: Changes.Updates): State = {
+    val merged: Status = {
+      val brightness = status.collect { case e: Status.Enabled => e.brightness }.getOrElse(Brightness.Brightest)
+      changes.update match
+        case Update.Enabled(enabled) =>
+          if !enabled then Status.Disabled else
+            status match
+              case Some(enabled: Status.Enabled) => enabled
+              case Some(Status.Disabled) | None => Status.White(Temperature.Medium, brightness)
+        case Update.Brightness(brightness) =>
+          status match
+            case Some(enabled: Status.Enabled) => enabled.withBrightness(brightness)
+            case Some(Status.Disabled) | None => Status.White(Temperature.Medium, brightness)
+        case Update.Temperature(temperature) =>
+          Status.White(temperature, brightness)
+        case Update.Color(color) =>
+          Status.Custom(color, brightness)
+        case Update.Scene(scene) =>
+          scene match
+            case dynamic: Scene.Dynamic =>
+              val speed = status.collect { case d: Status.Defined.Dynamic => d.speed }.getOrElse(Speed.Medium)
+              Status.Defined.Dynamic(dynamic, speed, brightness)
+            case static: Scene.Static =>
+              Status.Defined.Static(static, brightness)
+        case Update.Dynamic(scene, speed) =>
+          Status.Defined.Dynamic(scene, speed, brightness)
+        case Update.Speed(speed) =>
+          status match
+            case Some(dynamic: Status.Defined.Dynamic) =>
+              Status.Defined.Dynamic(dynamic.scene, speed, brightness)
+            case _ =>
+              status.getOrElse(Status.Disabled)
+        case Update.Status(newStatus) =>
+          newStatus
+    }
+    copy(
+      inetAddress = Some(inetAddress),
+      status = Some(merged),
+      lastSeen = Some(changes.timestamp)
+    )
+  }
 
   /**
    * Merges a set of settings changes into this device.
@@ -72,7 +123,7 @@ private case class DeviceState(
    * @param changes     The setting changes to merge into this device.
    * @return The merged device state.
    */
-  private def merge(inetAddress: InetAddress, changes: DeviceChanges.Settings): DeviceState = copy(
+  private def mergeSettings(inetAddress: InetAddress, changes: Changes.Settings): State = copy(
     inetAddress = Some(inetAddress),
     home = changes.home.orElse(home),
     room = changes.room.orElse(room),
@@ -90,7 +141,7 @@ private case class DeviceState(
    * @param changes     The pilot changes to merge into this device.
    * @return The merged device state.
    */
-  private def merge(inetAddress: InetAddress, changes: DeviceChanges.Pilot): DeviceState =
+  private def mergePilot(inetAddress: InetAddress, changes: Changes.Pilot): State =
     val merged: Status = if !changes.state then Status.Disabled else
       val brightness = changes.brightness
         .orElse(status.collect { case e: Status.Enabled => e.brightness })

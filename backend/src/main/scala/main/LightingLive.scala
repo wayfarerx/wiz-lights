@@ -18,37 +18,40 @@ package net.wayfarerx.wizlights
 package backend
 package main
 
-import java.net.{Inet4Address, InetAddress, NetworkInterface}
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 import scala.annotation.targetName
 import scala.concurrent.duration.*
-import scala.jdk.CollectionConverters.*
 
+import zio.{Clock, Duration, Hub, Ref, Schedule, Scope, UIO, URIO, URLayer, ZIO, ZLayer}
+import zio.concurrent.ConcurrentMap
 import zio.stream.{UStream, ZStream}
-import zio.{Cause, Clock, Duration, Hub, IO, Ref, Schedule, Scope, UIO, URIO, URLayer, ZIO, ZLayer}
+
 import model.*
-import network.{Incoming, Network, Outgoing}
+import network.*
 import protocol.*
-import service.Lighting
+import service.*
 
 /**
  * The live implementation of the lighting service.
  *
- * @param retryBackoffs     The durations to wait between retrying outgoing messages.
- * @param clock             The clock service.
- * @param network           The network service.
- * @param events            The hub of light events.
- * @param devices           The reference to known lights.
- * @param responseListeners The reference to active response listeners for retries.
+ * @param retryBackoffs The durations to wait between retrying outgoing messages.
+ * @param clock         The clock service.
+ * @param network       The network service.
+ * @param events        The hub of light events.
+ * @param devices       The reference to known lights.
+ * @param index         The index of MAC addresses by current IP address.
+ * @param invocations   The reference to active response listeners for retries.
  */
 final class LightingLive private(
   retryBackoffs: List[Duration],
   clock: Clock,
   network: Network,
   events: Hub[(Light, Option[Source])],
-  devices: Ref[Map[MacAddress, DeviceState]],
-  responseListeners: Ref[Set[InetAddress => UIO[Unit]]]
+  devices: Ref[Map[MacAddress, State]],
+  index: ConcurrentMap[InetAddress, MacAddress],
+  invocations: ConcurrentMap[Int, Invocation]
 ) extends Lighting:
 
   /** The number of milliseconds since the epoch. */
@@ -67,172 +70,197 @@ final class LightingLive private(
     devices.get.map(_.get(macAddress).map(_.toLight).getOrElse(Light(macAddress, None, None)))
 
   /* Return the lights with the specified MAC addresses. */
-  override def getAll(macAddresses: Iterable[MacAddress]): UIO[Set[Light]] =
+  override def getAll(macAddresses: Iterable[MacAddress]): UIO[Map[MacAddress, Light]] =
     devices.get.map { map =>
-      macAddresses.map(macAddress => map.get(macAddress).map(_.toLight).getOrElse(Light(macAddress, None, None))).toSet
+      macAddresses.foldLeft(Map.empty[MacAddress, Light]) { (result, macAddress) =>
+        map.get(macAddress).fold(result)(state => result + (macAddress -> state.toLight))
+      }
     }
 
   /* Update the enabled state of the light at the specified MAC address. */
-  override def update(macAddress: MacAddress, enabled: Boolean): UIO[Boolean] =
-    updateAll(List(macAddress), enabled).map(_ > 0)
+  override def update(macAddress: MacAddress, enabled: Boolean): UIO[Unit] =
+    updateAll(List(macAddress), enabled)
 
   /* Update the enabled state of the lights at the specified MAC addresses. */
-  override def updateAll(macAddresses: Iterable[MacAddress], enabled: Boolean): UIO[Int] =
-    executeUpdate(
-      macAddresses,
-      SetPilotRequest(state = Some(enabled)),
-      current =>
-        if enabled then current.map {
-          case Status.Disabled => Status.White(Temperature.Medium, Brightness.Brightest)
-          case other => other
-        } else Some(Status.Disabled)
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], enabled: Boolean): UIO[Unit] =
+    updateAll(macAddresses, Update.Enabled(enabled))
 
   /* Update the brightness of the light at the specified MAC address. */
   @targetName("updateBrightness")
-  override def update(macAddress: MacAddress, brightness: Brightness): UIO[Boolean] =
-    updateAll(List(macAddress), brightness).map(_ > 0)
+  override def update(macAddress: MacAddress, brightness: Brightness): UIO[Unit] =
+    updateAll(List(macAddress), brightness)
 
   /* Update the brightness of the lights at the specified MAC addresses. */
   @targetName("updateAllBrightness")
-  override def updateAll(macAddresses: Iterable[MacAddress], brightness: Brightness): UIO[Int] =
-    executeUpdate(
-      macAddresses,
-      SetPilotRequest(dimming = Some(brightness)),
-      {
-        case Some(Status.White(t, _)) => Some(Status.White(t, brightness))
-        case Some(Status.Defined.Static(s, _)) => Some(Status.Defined.Static(s, brightness))
-        case Some(Status.Defined.Dynamic(s, sp, _)) => Some(Status.Defined.Dynamic(s, sp, brightness))
-        case Some(Status.Custom(c, _)) => Some(Status.Custom(c, brightness))
-        case Some(Status.Disabled) => Some(Status.White(Temperature.Medium, brightness))
-        case None => Some(Status.White(Temperature.Medium, brightness))
-      }
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], brightness: Brightness): UIO[Unit] =
+    updateAll(macAddresses, Update.Brightness(brightness))
 
   /* Update the color temperature of the light at the specified MAC address. */
   @targetName("updateTemperature")
-  override def update(macAddress: MacAddress, temperature: Temperature): UIO[Boolean] =
-    updateAll(List(macAddress), temperature).map(_ > 0)
+  override def update(macAddress: MacAddress, temperature: Temperature): UIO[Unit] =
+    updateAll(List(macAddress), temperature)
 
   /* Update the color temperature of the lights at the specified MAC addresses. */
   @targetName("updateAllTemperature")
-  override def updateAll(macAddresses: Iterable[MacAddress], temperature: Temperature): UIO[Int] =
-    val request = SetPilotRequest(state = Some(true), temp = Some(temperature: Int))
-    executeUpdate(
-      macAddresses,
-      request,
-      current =>
-        val b = current.collect { case e: Status.Enabled => e.brightness }.getOrElse(Brightness.Brightest)
-        Some(Status.White(temperature, b))
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], temperature: Temperature): UIO[Unit] =
+    updateAll(macAddresses, Update.Temperature(temperature))
 
   /* Update the color of the light at the specified MAC address. */
-  override def update(macAddress: MacAddress, color: Color): UIO[Boolean] =
-    updateAll(List(macAddress), color).map(_ > 0)
+  override def update(macAddress: MacAddress, color: Color): UIO[Unit] =
+    updateAll(List(macAddress), color)
 
   /* Update the color of the lights at the specified MAC addresses. */
-  override def updateAll(macAddresses: Iterable[MacAddress], color: Color): UIO[Int] =
-    val request = SetPilotRequest(
-      state = Some(true),
-      r = Some(color.red),
-      g = Some(color.green),
-      b = Some(color.blue),
-      c = Some(color.cool),
-      w = Some(color.warm)
-    )
-    executeUpdate(
-      macAddresses,
-      request,
-      current =>
-        val b = current.collect { case e: Status.Enabled => e.brightness }.getOrElse(Brightness.Brightest)
-        Some(Status.Custom(color, b))
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], color: Color): UIO[Unit] =
+    updateAll(macAddresses, Update.Color(color))
 
   /* Update the scene of the light at the specified MAC address. */
-  override def update(macAddress: MacAddress, scene: Scene): UIO[Boolean] =
-    updateAll(List(macAddress), scene).map(_ > 0)
+  override def update(macAddress: MacAddress, scene: Scene): UIO[Unit] =
+    updateAll(List(macAddress), scene)
 
   /* Update the scene of the lights at the specified MAC addresses. */
-  override def updateAll(macAddresses: Iterable[MacAddress], scene: Scene): UIO[Int] =
-    val request = SetPilotRequest(state = Some(true), sceneId = Some(scene.id))
-    executeUpdate(
-      macAddresses,
-      request,
-      current =>
-        val b = current.collect { case e: Status.Enabled => e.brightness }.getOrElse(Brightness.Brightest)
-        scene match
-          case dynamic: Scene.Dynamic =>
-            val sp = current.collect { case d: Status.Defined.Dynamic => d.speed }.getOrElse(Speed.Medium)
-            Some(Status.Defined.Dynamic(dynamic, sp, b))
-          case static: Scene.Static =>
-            Some(Status.Defined.Static(static, b))
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], scene: Scene): UIO[Unit] =
+    updateAll(macAddresses, Update.Scene(scene))
 
   /* Update the dynamic scene and speed of the light at the specified MAC address. */
-  override def update(macAddress: MacAddress, scene: Scene.Dynamic, speed: Speed): UIO[Boolean] =
-    updateAll(List(macAddress), scene, speed).map(_ > 0)
+  override def update(macAddress: MacAddress, scene: Scene.Dynamic, speed: Speed): UIO[Unit] =
+    updateAll(List(macAddress), scene, speed)
 
   /* Update the dynamic scene and speed of the lights at the specified MAC addresses. */
-  override def updateAll(macAddresses: Iterable[MacAddress], scene: Scene.Dynamic, speed: Speed): UIO[Int] =
-    val request = SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed: Int))
-    executeUpdate(
-      macAddresses,
-      request,
-      current =>
-        val b = current.collect { case e: Status.Enabled => e.brightness }.getOrElse(Brightness.Brightest)
-        Some(Status.Defined.Dynamic(scene, speed, b))
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], scene: Scene.Dynamic, speed: Speed): UIO[Unit] =
+    updateAll(macAddresses, Update.Dynamic(scene, speed))
 
   /* Update the dynamic scene speed of the light at the specified MAC address. */
   @targetName("updateSpeed")
-  override def update(macAddress: MacAddress, speed: Speed): UIO[Boolean] =
-    updateAll(List(macAddress), speed).map(_ > 0)
+  override def update(macAddress: MacAddress, speed: Speed): UIO[Unit] =
+    updateAll(List(macAddress), speed)
 
   /* Update the dynamic scene speed of the lights at the specified MAC addresses. */
   @targetName("updateAllSpeed")
-  override def updateAll(macAddresses: Iterable[MacAddress], speed: Speed): UIO[Int] =
-    executeUpdate(
-      macAddresses,
-      SetPilotRequest(speed = Some(speed)),
-      {
-        case Some(Status.Defined.Dynamic(s, _, b)) => Some(Status.Defined.Dynamic(s, speed, b))
-        case other => other
-      }
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], speed: Speed): UIO[Unit] =
+    updateAll(macAddresses, Update.Speed(speed))
 
   /* Update the status of the light at the specified MAC address. */
-  override def update(macAddress: MacAddress, status: Status): UIO[Boolean] =
-    updateAll(List(macAddress), status).map(_ > 0)
+  override def update(macAddress: MacAddress, status: Status): UIO[Unit] =
+    updateAll(List(macAddress), status)
 
   /* Update the statuses of the lights at the specified MAC addresses. */
-  override def updateAll(macAddresses: Iterable[MacAddress], status: Status): UIO[Int] =
-    executeUpdate(
-      macAddresses,
-      status match
-        case Status.Disabled =>
-          SetPilotRequest(state = Some(false))
-        case Status.White(temp, brightness) =>
-          SetPilotRequest(state = Some(true), temp = Some(temp), dimming = Some(brightness))
-        case Status.Defined.Static(scene, brightness) =>
-          SetPilotRequest(state = Some(true), sceneId = Some(scene.id), dimming = Some(brightness))
-        case Status.Defined.Dynamic(scene, speed, brightness) =>
-          SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed), dimming = Some(brightness))
-        case Status.Custom(color, brightness) =>
-          SetPilotRequest(
-            state = Some(true),
-            dimming = Some(brightness),
-            r = Some(color.red),
-            g = Some(color.green),
-            b = Some(color.blue),
-            c = Some(color.cool),
-            w = Some(color.warm)
-          ),
-      _ => Some(status)
-    )
+  override def updateAll(macAddresses: Iterable[MacAddress], status: Status): UIO[Unit] =
+    updateAll(macAddresses, Update.Status(status))
+
+  /* Update the light at the specified MAC address using the specified update. */
+  override def update(macAddress: MacAddress, update: Update): UIO[Unit] =
+    updateAll(List(macAddress), update)
+
+  /* Update the lights at the specified MAC addresses using the specified update. */
+  override def updateAll(macAddresses: Iterable[MacAddress], update: Update): UIO[Unit] = update match
+    case Update.Enabled(enabled) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(enabled)))
+    case Update.Brightness(brightness) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(dimming = Some(brightness)))
+    case Update.Temperature(temperature) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(temp = Some(temperature)))
+    case Update.Color(color) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(
+        r = Some(color.red),
+        g = Some(color.green),
+        b = Some(color.blue),
+        c = Some(color.cool),
+        w = Some(color.warm)
+      ))
+    case Update.Scene(scene) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(sceneId = Some(scene.id)))
+    case Update.Dynamic(scene, speed) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(sceneId = Some(scene.id), speed = Some(speed)))
+    case Update.Speed(speed) =>
+      invoke(macAddresses, Some(update))(SetPilotRequest(speed = Some(speed)))
+    case Update.Status(status) =>
+      invoke(macAddresses, Some(update))(
+        status match
+          case Status.Disabled =>
+            SetPilotRequest(
+              state = Some(false)
+            )
+          case Status.White(temp, brightness) =>
+            SetPilotRequest(
+              state = Some(true),
+              temp = Some(temp),
+              dimming = Some(brightness)
+            )
+          case Status.Defined.Static(scene, brightness) =>
+            SetPilotRequest(
+              state = Some(true),
+              sceneId = Some(scene.id),
+              dimming = Some(brightness)
+            )
+          case Status.Defined.Dynamic(scene, speed, brightness) =>
+            SetPilotRequest(
+              state = Some(true),
+              sceneId = Some(scene.id),
+              speed = Some(speed),
+              dimming = Some(brightness)
+            )
+          case Status.Custom(color, brightness) =>
+            SetPilotRequest(
+              state = Some(true),
+              dimming = Some(brightness),
+              r = Some(color.red),
+              g = Some(color.green),
+              b = Some(color.blue),
+              c = Some(color.cool),
+              w = Some(color.warm)
+            )
+      )
 
   /* Subscribe to events from this service. */
   override def subscribe: URIO[Scope, UStream[(Light, Option[Source])]] =
     ZStream.fromHubScoped(events)
+
+  //
+  // Helper functions.
+  //
+
+  /**
+   * Looks up the internet addresses of the devices with the specified MAC addresses.
+   *
+   * @param macAddresses The MAC addresses of the devices to look up.
+   * @return The internet addresses of the devices with the specified MAC addresses.
+   */
+  private def lookup(macAddresses: Iterable[MacAddress]): UIO[Map[MacAddress, InetAddress]] =
+    devices.get.map { map =>
+      macAddresses.foldLeft(Map.empty) { (result, macAddress) =>
+        map.get(macAddress).flatMap(_.inetAddress).fold(result)(inetAddress => result + (macAddress -> inetAddress))
+      }
+    }
+
+  /**
+   * Sets the last seen timestamp of a device to the current time.
+   *
+   * @param macAddress The MAC address of the device being touched.
+   */
+  private def touch(macAddress: MacAddress): UIO[Unit] = for
+    now <- currentTime
+    _ <- devices.modify { map =>
+      () -> map.get(macAddress).fold(map)(old => map + (macAddress -> old.copy(lastSeen = Some(now))))
+    }
+  yield ()
+
+  /**
+   * Completes an invocation from a MAC address.
+   *
+   * @param id The possible ID of the invocation to complete.
+   * @param macAddress The MAC address that completed the invocation.
+   * @return The update associated with the invocation, if any.
+   */
+  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[Update]] = for
+    invocation <- id.fold[UIO[Option[Invocation]]](ZIO.none)(invocations.get)
+    result <- invocation.fold[UIO[Option[Update]]](ZIO.none) { invocation =>
+      for
+        result <- invocation.complete(macAddress)
+        targets <- invocation.targets
+        _ <- if targets.isEmpty then invocations.remove(invocation.id) else ZIO.unit
+      yield result
+    }
+  yield result
 
   //
   // Handling of outgoing messages.
@@ -240,8 +268,8 @@ final class LightingLive private(
 
   /** Broadcasts discovery requests on the network. */
   def discover: UIO[Unit] = for
-    _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest))
-    _ <- network.publish(Outgoing.Broadcast(GetPilotRequest))
+    _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
+    _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
     credentials <- network.localhost
     _ <- credentials match
       case Some((mac, ip)) => network.publish(Outgoing.Broadcast(RegistrationRequest(mac, ip)))
@@ -249,103 +277,54 @@ final class LightingLive private(
   yield ()
 
   /**
-   * Executes a partial or full status update on lights matching the specified addresses.
+   * Sends a message to the specified devices.
    *
-   * @param addresses    The addresses of the lights to update.
-   * @param request      The pilot request to send.
-   * @param updateStatus The function to update the local cached status.
-   * @return The number of lights found and updated.
+   * @param targets The targets of the message.
+   * @param update  The optional update associated with the message.
+   * @param request The request to send as the body of the message.
    */
-  private def executeUpdate(
-    addresses: Iterable[MacAddress],
-    request: SetPilotRequest,
-    updateStatus: Option[Status] => Option[Status]
-  ): UIO[Int] = for
-    targetAddresses <- ZIO.succeed(addresses.toSet)
-    currentRecords <- devices.get
-    matching = targetAddresses.flatMap { addr =>
-      currentRecords.get(addr).flatMap(rec => rec.inetAddress.map(ip => (addr, rec, ip)))
-    }
-    _ <- if matching.isEmpty then ZIO.unit else
-      val ips = matching.map(_._3)
-      for
-        now <- Clock.instant
-        updatedLights <- devices.modify { map =>
-          val updated = matching.foldLeft(map) { case (acc, (addr, rec, _)) =>
-            val newStatus = updateStatus(rec.status)
-            val newRec = rec.copy(status = newStatus)// FIXME, lastSeen = Some(now))
-            acc.updated(addr, newRec)
-          }
-          val lights = matching.flatMap { case (addr, _, _) => updated.get(addr).map(_.toLight) }
-          (lights, updated)
-        }
-        _ <- sendCommand(ips, request)
-        _ <- ZIO.foreachDiscard(updatedLights) { light =>
-          events.publish((light, Some(Source.Udp)))
-        }
-      yield ()
-  yield matching.size
-
-  /**
-   * Sends an outgoing command with retries that track responding devices.
-   *
-   * @param targets The target IP addresses.
-   * @param request The request to send.
-   */
-  private def sendCommand(targets: Set[InetAddress], request: Request): UIO[Unit] =
-    if targets.isEmpty then ZIO.unit
-    else if retryBackoffs.isEmpty then
-      network.publish(Outgoing.Send(targets, request))
-    else
-      for
-        pendingRef <- Ref.make(targets)
-        listener = (ip: InetAddress) => pendingRef.update(_ - ip)
-        _ <- responseListeners.update(_ + listener)
-        _ <- network.publish(Outgoing.Send(targets, request))
-        _ <- retryLoop(pendingRef, request, retryBackoffs)
-          .ensuring(responseListeners.update(_ - listener))
-          .fork
-      yield ()
+  private def invoke(targets: Iterable[MacAddress], update: Option[Update] = None)(request: Request): UIO[Unit] = for
+    now <- currentTime
+    invocation <- Invocation.make(targets, now, update)
+    _ <- invocations.put(invocation.id, invocation)
+    _ <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+  yield ()
 
   /**
    * Retries sending a request to devices that have not yet responded.
    *
-   * @param pendingRef The reference to remaining target addresses.
+   * @param invocation The invocation being managed.
    * @param request    The request to send.
    * @param backoffs   The remaining backoff durations.
    */
   private def retryLoop(
-    pendingRef: Ref[Set[InetAddress]],
+    invocation: Invocation,
     request: Request,
     backoffs: List[Duration]
-  ): UIO[Unit] = backoffs match
-    case Nil => ZIO.unit
-    case head :: tail =>
-      ZIO.sleep(head) *> pendingRef.get.flatMap { remaining =>
-        if remaining.isEmpty then ZIO.unit
-        else network.publish(Outgoing.Send(remaining, request)) *> retryLoop(pendingRef, request, tail)
-      }
+  ): UIO[Unit] =
+    invocation.targets.flatMap { remaining =>
+      if remaining.isEmpty then invocations.remove(invocation.id).ignore else for
+        targets <- lookup(remaining)
+        _ <- if targets.isEmpty then invocations.remove(invocation.id).ignore else
+          network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
+            backoffs match
+              case head :: tail =>
+                ZIO.sleep(head) *> retryLoop(invocation, request, tail)
+              case Nil =>
+                ZIO.unit
+          }
+      yield ()
+    }
 
   /**
    * Registers this controller with the specified device IP.
    *
-   * @param target The device IP address to register with.
+   * @param targets The device MAC addresses to register with.
    */
-  private def registerWith(target: InetAddress): UIO[Unit] =
+  private def registerWith(targets: Iterable[MacAddress]): UIO[Unit] =
     network.localhost.flatMap {
-      case Some((mac, ip)) => network.publish(Outgoing.Send(Set(target), RegistrationRequest(mac, ip)))
+      case Some((mac, ip)) => invoke(targets)(RegistrationRequest(mac, ip))
       case None => ZIO.unit
-    }
-
-  /**
-   * Notifies active retry listeners that a device at the specified IP address has responded.
-   *
-   * @param senderIp The IP address of the responding device.
-   */
-  private def notifyResponse(senderIp: InetAddress): UIO[Unit] =
-    responseListeners.get.flatMap { listeners =>
-      if listeners.isEmpty then ZIO.unit
-      else ZIO.foreachDiscard(listeners)(_(senderIp))
     }
 
   //
@@ -357,22 +336,19 @@ final class LightingLive private(
    *
    * @param message The incoming message.
    */
-  def onMessage(message: Incoming): UIO[Unit] =
-    notifyResponse(message.address) *> { // FIXME
-      message.response match
-        case FirstBeatResponse(payload) =>
-          payload.fold(onErrorResponse(FirstBeatMethod, _), onFirstBeat(message.address, _))
-        case GetSystemConfigResponse(payload) =>
-          payload.fold(onErrorResponse(GetSystemConfigMethod, _), onGetSystemConfig(message.address, _))
-        case GetPilotResponse(payload) =>
-          payload.fold(onErrorResponse(GetPilotMethod, _), onGetPilot(message.address, _))
-        case SyncPilotResponse(payload) =>
-          payload.fold(onErrorResponse(SyncPilotMethod, _), onSyncPilot(message.address, _))
-        case RegistrationResponse(payload) =>
-          payload.fold(onErrorResponse(RegistrationMethod, _), onRegistration(message.address, _))
-        case SetPilotResponse(payload) =>
-          payload.fold(onErrorResponse(SetPilotMethod, _), onSetPilot(message.address, _))
-    }
+  def onMessage(message: Incoming): UIO[Unit] = message.response match
+    case FirstBeatResponse(payload, _) =>
+      payload.fold(onErrorResponse(FirstBeatMethod, None, _), onFirstBeat(message.address, _))
+    case GetSystemConfigResponse(payload, id) =>
+      payload.fold(onErrorResponse(GetSystemConfigMethod, id, _), onGetSystemConfig(message.address, id, _))
+    case GetPilotResponse(payload, id) =>
+      payload.fold(onErrorResponse(GetPilotMethod, id, _), onGetPilot(message.address, id, _))
+    case SyncPilotResponse(payload, _) =>
+      payload.fold(onErrorResponse(SyncPilotMethod, None, _), onSyncPilot(message.address, _))
+    case RegistrationResponse(payload, id) =>
+      payload.fold(onErrorResponse(RegistrationMethod, id, _), onRegistration(message.address, id, _))
+    case SetPilotResponse(payload, id) =>
+      payload.fold(onErrorResponse(SetPilotMethod, id, _), onSetPilot(message.address, id, _))
 
   /**
    * Called when the service receives a first beat response.
@@ -380,9 +356,12 @@ final class LightingLive private(
    * @param inetAddress The internet address of the device.
    * @param payload     The first beat response payload.
    */
-  private def onFirstBeat(inetAddress: InetAddress, payload: FirstBeatResponsePayload): UIO[Unit] = for
+  private def onFirstBeat(
+    inetAddress: InetAddress,
+    payload: FirstBeatResponsePayload
+  ): UIO[Unit] = for
     now <- currentTime
-    changes <- DeviceChanges.Settings.make(
+    changes <- Changes.Settings.make(
       payload.mac,
       now,
       payload.homeId,
@@ -393,10 +372,11 @@ final class LightingLive private(
       payload.typeId
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret first beat changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
+      val macAddresses = changes.macAddress :: Nil
       for
-        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
-        _ <- network.publish(Outgoing.Send(Set(inetAddress), GetPilotRequest)) // FIXME Network.publish retries?
-        _ <- registerWith(inetAddress) // FIXME What is this doing?
+        _ <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
+        _ <- invoke(macAddresses)(GetPilotRequest())
+        _ <- registerWith(macAddresses)
       yield ()
     }
   yield ()
@@ -405,11 +385,16 @@ final class LightingLive private(
    * Handles a getSystemConfig response.
    *
    * @param inetAddress The internet address of the device.
+   * @param id          The correlation ID of the incoming response.
    * @param payload     The getSystemConfig payload.
    */
-  private def onGetSystemConfig(inetAddress: InetAddress, payload: GetSystemConfigResponsePayload): UIO[Unit] = for
+  private def onGetSystemConfig(
+    inetAddress: InetAddress,
+    id: Option[Int],
+    payload: GetSystemConfigResponsePayload
+  ): UIO[Unit] = for
     now <- currentTime
-    changes <- DeviceChanges.Settings.make(
+    changes <- Changes.Settings.make(
       payload.mac,
       now,
       payload.homeId,
@@ -420,10 +405,12 @@ final class LightingLive private(
       payload.typeId
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get system config changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
+      val macAddresses = changes.macAddress :: Nil
       for
+        _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.status.isEmpty then network.publish(Outgoing.Send(Set(inetAddress), GetPilotRequest)) else ZIO.unit
-        _ <- registerWith(inetAddress)
+        _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
+        _ <- registerWith(macAddresses)
       yield ()
     }
   yield ()
@@ -432,11 +419,16 @@ final class LightingLive private(
    * Handles a getPilot response.
    *
    * @param inetAddress The internet address of the device.
+   * @param id          The correlation ID of the incoming response.
    * @param payload     The getPilot payload.
    */
-  private def onGetPilot(inetAddress: InetAddress, payload: GetPilotResponsePayload): UIO[Unit] = for
+  private def onGetPilot(
+    inetAddress: InetAddress,
+    id: Option[Int],
+    payload: GetPilotResponsePayload
+  ): UIO[Unit] = for
     now <- currentTime
-    changes <- DeviceChanges.Pilot.make(
+    changes <- Changes.Pilot.make(
       payload.mac,
       now,
       payload.rssi,
@@ -452,10 +444,12 @@ final class LightingLive private(
       payload.w
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get pilot changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
+      val macAddresses = changes.macAddress :: Nil
       for
+        _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.module.isEmpty then network.publish(Outgoing.Send(Set(inetAddress), GetSystemConfigRequest)) else ZIO.unit
-        _ <- registerWith(inetAddress)
+        _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- registerWith(macAddresses)
       yield ()
     }
   yield ()
@@ -466,9 +460,12 @@ final class LightingLive private(
    * @param inetAddress The internet address of the device.
    * @param payload     The syncPilot payload.
    */
-  private def onSyncPilot(inetAddress: InetAddress, payload: SyncPilotResponsePayload): UIO[Unit] = for
+  private def onSyncPilot(
+    inetAddress: InetAddress,
+    payload: SyncPilotResponsePayload
+  ): UIO[Unit] = for
     now <- currentTime
-    changes <- DeviceChanges.Pilot.make(
+    changes <- Changes.Pilot.make(
       payload.mac,
       now,
       payload.rssi,
@@ -483,20 +480,57 @@ final class LightingLive private(
       payload.c,
       payload.w
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret sync pilot changes.", _).map(_ => None))
-    source <- payload.src.fold(ZIO.none)(Source.make(_).asSome.catchAllCause(_ => ZIO.none))
+    source <- payload.src.fold(ZIO.none)(Source.make(_).asSome.catchAllCause(
+      ZIO.logWarningCause("Unable to interpret sync pilot source.", _) *> ZIO.none
+    ))
     _ <- changes.fold(ZIO.unit) { changes =>
       for
         newDevice <- applyChanges(inetAddress, changes, source)
-        _ <- if newDevice.module.isEmpty then network.publish(Outgoing.Send(Set(inetAddress), GetSystemConfigRequest)) else ZIO.unit
+        _ <- if newDevice.module.isEmpty then invoke(Seq(changes.macAddress))(GetSystemConfigRequest()) else ZIO.unit
       yield ()
     }
   yield ()
 
-  private def onRegistration(inetAddress: InetAddress, payload: RegistrationResponsePayload): UIO[Unit] =
-    ???
+  /**
+   * Handles a registration response.
+   *
+   * @param inetAddress The internet address of the device.
+   * @param id          The correlation ID of the incoming response.
+   * @param payload     The registration payload.
+   */
+  private def onRegistration(
+    inetAddress: InetAddress,
+    id: Option[Int],
+    payload: RegistrationResponsePayload
+  ): UIO[Unit] = for
+    macAddress <- index.get(inetAddress)
+    _ <- macAddress.fold(ZIO.unit) { macAddress =>
+      if payload.success then completeInvocation(id, macAddress) *> touch(macAddress) else touch(macAddress)
+    }
+  yield ()
 
-  private def onSetPilot(inetAddress: InetAddress, payload: SetPilotResponsePayload): UIO[Unit] =
-    ???
+  /**
+   * Handles a setPilot response.
+   *
+   * @param inetAddress The internet address of the device.
+   * @param id          The correlation ID of the incoming response.
+   * @param payload     The set pilot payload.
+   */
+  private def onSetPilot(
+    inetAddress: InetAddress,
+    id: Option[Int],
+    payload: SetPilotResponsePayload
+  ): UIO[Unit] = for
+    macAddress <- index.get(inetAddress)
+    _ <- macAddress.fold(ZIO.unit) { macAddress =>
+      if payload.success then for
+        update <- completeInvocation(id, macAddress)
+        _ <- update.fold(touch(macAddress)) { update =>
+          currentTime.flatMap(t => applyChanges(inetAddress, Changes.Updates(macAddress, t, update), Some(Source.Udp)))
+        }
+      yield () else touch(macAddress)
+    }
+  yield ()
 
   /**
    * Applies a set of changes to a device state in response to a signal from that device.
@@ -504,30 +538,40 @@ final class LightingLive private(
    * @param inetAddress The internet address of the device in question.
    * @param changes     The changes to apply to the device state.
    * @param source      The optional source of the event that generated the changes.
-   * @return The new state of the device in question.
+   * @return The old and new states of the device in question.
    */
   private def applyChanges(
     inetAddress: InetAddress,
-    changes: DeviceChanges,
+    changes: Changes,
     source: Option[Source]
-  ): UIO[DeviceState] = for
-    (oldDevice, newDevice) <- devices.modify { devices =>
-      val oldDevice = devices.getOrElse(changes.macAddress, DeviceState(changes.macAddress))
-      val newDevice = oldDevice.merge(inetAddress, changes)
-      (oldDevice -> newDevice, devices.updated(changes.macAddress, newDevice))
+  ): UIO[State] = for
+    (oldState, newState) <- devices.modify { devices =>
+      val oldState = devices.getOrElse(changes.macAddress, State(changes.macAddress))
+      val newState = oldState.merge(inetAddress, changes)
+      (oldState -> newState, devices.updated(changes.macAddress, newState))
     }
+    _ <- (oldState.inetAddress, newState.inetAddress) match
+      case (Some(oldInetAddress), Some(newInetAddress)) if oldInetAddress != newInetAddress =>
+        index.remove(oldInetAddress) *> index.put(newInetAddress, changes.macAddress)
+      case (Some(oldInetAddress), None) =>
+        index.remove(oldInetAddress)
+      case (None, Some(newInetAddress)) =>
+        index.put(newInetAddress, changes.macAddress)
+      case _ =>
+        ZIO.unit
     _ <-
-      if newDevice.timeless != oldDevice.timeless then events.publish(newDevice.toLight -> source).ignore
+      if newState.timeless != oldState.timeless then events.publish(newState.toLight -> source).ignore
       else ZIO.unit
-  yield newDevice
+  yield newState
 
   /**
    * Called when a device has sent an error response.
    *
    * @param method The method that the error pertains to.
+   * @param id     The correlation ID of the incoming response.
    * @param error The payload of the error response.
    */
-  private def onErrorResponse(method: String, error: ErrorResponsePayload): UIO[Unit] =
+  private def onErrorResponse(method: String, id: Option[Int], error: ErrorResponsePayload): UIO[Unit] =
     (error.code, error.message) match
       case (Some(code), Some(message)) => ZIO.logWarning(s"Received $method response error $code: $message")
       case (Some(code), None) => ZIO.logWarning(s"Received $method response error $code.")
@@ -565,9 +609,10 @@ object LightingLive:
     network: Network
   ): URIO[Scope, Lighting] = for
     hub <- Hub.unbounded[(Light, Option[Source])]
-    devices <- Ref.make(Map.empty[MacAddress, DeviceState])
-    listeners <- Ref.make(Set.empty[InetAddress => UIO[Unit]])
-    service = LightingLive(retryBackoffs.map(Duration.fromScala), clock, network, hub, devices, listeners)
+    devices <- Ref.make(Map.empty[MacAddress, State])
+    index <- ConcurrentMap.make[InetAddress, MacAddress]()
+    invocations <- ConcurrentMap.make[Int, Invocation]()
+    service = LightingLive(retryBackoffs.map(Duration.fromScala), clock, network, hub, devices, index, invocations)
     _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
     discoveryIntervalZio = Duration.fromScala(discoveryInterval)
     _ <- service.discover

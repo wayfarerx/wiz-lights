@@ -42,7 +42,7 @@ object UpdateSpec extends ZIOSpecDefault:
           Update.Brightness(bright),
           Update.Temperature(temp),
           Update.Color(col),
-          Update.Static(staticScene),
+          Update.Scene(staticScene),
           Update.Dynamic(dynamicScene, spd),
           Update.Speed(spd),
           Update.Status(status)
@@ -52,7 +52,7 @@ object UpdateSpec extends ZIOSpecDefault:
           case Update.Brightness(b) => s"brightness:${b: Int}"
           case Update.Temperature(t) => s"temperature:${t: Int}"
           case Update.Color(c) => s"color:${c.red}"
-          case Update.Static(s) => s"static:${s.name}"
+          case Update.Scene(s) => s"static:${s.name}"
           case Update.Dynamic(s, sp) => s"dynamic:${s.name}:${sp: Int}"
           case Update.Speed(sp) => s"speed:${sp: Int}"
           case Update.Status(st) => s"status:$st"

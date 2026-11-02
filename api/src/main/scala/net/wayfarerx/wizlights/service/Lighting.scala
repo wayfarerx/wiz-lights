@@ -19,8 +19,8 @@ package service
 
 import scala.annotation.targetName
 
-import zio.stream.UStream
 import zio.{Scope, UIO, URIO}
+import zio.stream.UStream
 
 import model.*
 
@@ -46,7 +46,14 @@ trait Lighting:
    * @param macAddresses The MAC addresses of the lights to return.
    * @return The lights with the specified MAC addresses.
    */
-  def getAll(macAddresses: Iterable[MacAddress]): UIO[Set[Light]]
+  def getAll(macAddresses: Iterable[MacAddress]): UIO[Map[MacAddress, Light]]
+
+  /**
+   * Subscribes to events from this service.
+   *
+   * @return A stream of events published by this service.
+   */
+  def subscribe: URIO[Scope, UStream[(Light, Option[Source])]]
 
   /**
    * Updates the enabled state of the light at the specified MAC address.
@@ -55,7 +62,7 @@ trait Lighting:
    * @param enabled    True to enable the light, false to disable it.
    * @return True if a light was found and updated.
    */
-  def update(macAddress: MacAddress, enabled: Boolean): UIO[Boolean]
+  def update(macAddress: MacAddress, enabled: Boolean): UIO[Unit]
 
   /**
    * Updates the enabled state of the lights at the specified MAC addresses.
@@ -64,7 +71,7 @@ trait Lighting:
    * @param enabled      True to enable the lights, false to disable them.
    * @return The number of lights found and updated.
    */
-  def updateAll(macAddresses: Iterable[MacAddress], enabled: Boolean): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], enabled: Boolean): UIO[Unit]
 
   /**
    * Updates the brightness of the light at the specified MAC address.
@@ -74,7 +81,7 @@ trait Lighting:
    * @return True if a light was found and updated.
    */
   @targetName("updateBrightness")
-  def update(macAddress: MacAddress, brightness: Brightness): UIO[Boolean]
+  def update(macAddress: MacAddress, brightness: Brightness): UIO[Unit]
 
   /**
    * Updates the brightness of the lights at the specified MAC addresses.
@@ -84,7 +91,7 @@ trait Lighting:
    * @return The number of lights found and updated.
    */
   @targetName("updateAllBrightness")
-  def updateAll(macAddresses: Iterable[MacAddress], brightness: Brightness): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], brightness: Brightness): UIO[Unit]
 
   /**
    * Updates the color temperature of the light at the specified MAC address.
@@ -94,7 +101,7 @@ trait Lighting:
    * @return True if a light was found and updated.
    */
   @targetName("updateTemperature")
-  def update(macAddress: MacAddress, temperature: Temperature): UIO[Boolean]
+  def update(macAddress: MacAddress, temperature: Temperature): UIO[Unit]
 
   /**
    * Updates the color temperature of the lights at the specified MAC addresses.
@@ -104,7 +111,7 @@ trait Lighting:
    * @return The number of lights found and updated.
    */
   @targetName("updateAllTemperature")
-  def updateAll(macAddresses: Iterable[MacAddress], temperature: Temperature): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], temperature: Temperature): UIO[Unit]
 
   /**
    * Updates the color of the light at the specified MAC address.
@@ -113,7 +120,7 @@ trait Lighting:
    * @param color      The color to set the light to.
    * @return True if a light was found and updated.
    */
-  def update(macAddress: MacAddress, color: Color): UIO[Boolean]
+  def update(macAddress: MacAddress, color: Color): UIO[Unit]
 
   /**
    * Updates the color of the lights at the specified MAC addresses.
@@ -122,7 +129,7 @@ trait Lighting:
    * @param color        The color to set the lights to.
    * @return The number of lights found and updated.
    */
-  def updateAll(macAddresses: Iterable[MacAddress], color: Color): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], color: Color): UIO[Unit]
 
   /**
    * Updates the scene of the light at the specified MAC address.
@@ -131,7 +138,7 @@ trait Lighting:
    * @param scene      The scene to set the light to.
    * @return True if a light was found and updated.
    */
-  def update(macAddress: MacAddress, scene: Scene): UIO[Boolean]
+  def update(macAddress: MacAddress, scene: Scene): UIO[Unit]
 
   /**
    * Updates the scene of the lights at the specified MAC addresses.
@@ -140,7 +147,7 @@ trait Lighting:
    * @param scene        The scene to set the lights to.
    * @return The number of lights found and updated.
    */
-  def updateAll(macAddresses: Iterable[MacAddress], scene: Scene): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], scene: Scene): UIO[Unit]
 
   /**
    * Updates the dynamic scene and speed of the light at the specified MAC address.
@@ -150,7 +157,7 @@ trait Lighting:
    * @param speed      The speed to set the dynamic scene to.
    * @return True if a light was found and updated.
    */
-  def update(macAddress: MacAddress, scene: Scene.Dynamic, speed: Speed): UIO[Boolean]
+  def update(macAddress: MacAddress, scene: Scene.Dynamic, speed: Speed): UIO[Unit]
 
   /**
    * Updates the dynamic scene and speed of the lights at the specified MAC addresses.
@@ -160,7 +167,7 @@ trait Lighting:
    * @param speed        The speed to set the dynamic scene to.
    * @return The number of lights found and updated.
    */
-  def updateAll(macAddresses: Iterable[MacAddress], scene: Scene.Dynamic, speed: Speed): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], scene: Scene.Dynamic, speed: Speed): UIO[Unit]
 
   /**
    * Updates the dynamic scene speed of the light at the specified MAC address.
@@ -170,7 +177,7 @@ trait Lighting:
    * @return True if a light was found and updated.
    */
   @targetName("updateSpeed")
-  def update(macAddress: MacAddress, speed: Speed): UIO[Boolean]
+  def update(macAddress: MacAddress, speed: Speed): UIO[Unit]
 
   /**
    * Updates the dynamic scene speed of the lights at the specified MAC addresses.
@@ -180,7 +187,7 @@ trait Lighting:
    * @return The number of lights found and updated.
    */
   @targetName("updateAllSpeed")
-  def updateAll(macAddresses: Iterable[MacAddress], speed: Speed): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], speed: Speed): UIO[Unit]
 
   /**
    * Updates the status of the light at the specified MAC address.
@@ -189,7 +196,7 @@ trait Lighting:
    * @param status     The status to set the light to.
    * @return True if a light was found and updated.
    */
-  def update(macAddress: MacAddress, status: Status): UIO[Boolean]
+  def update(macAddress: MacAddress, status: Status): UIO[Unit]
 
   /**
    * Updates the statuses of the lights at the specified MAC addresses.
@@ -198,7 +205,7 @@ trait Lighting:
    * @param status       The status to set the lights to.
    * @return The number of lights were found and updated.
    */
-  def updateAll(macAddresses: Iterable[MacAddress], status: Status): UIO[Int]
+  def updateAll(macAddresses: Iterable[MacAddress], status: Status): UIO[Unit]
 
   /**
    * Updates the light at the specified MAC address using the specified update.
@@ -207,15 +214,7 @@ trait Lighting:
    * @param update     The update to apply to the light.
    * @return True if a light was found and updated.
    */
-  final def update(macAddress: MacAddress, update: Update): UIO[Boolean] = update match
-    case Update.Enabled(enabled) => this.update(macAddress, enabled)
-    case Update.Brightness(brightness) => this.update(macAddress, brightness)
-    case Update.Temperature(temperature) => this.update(macAddress, temperature)
-    case Update.Color(color) => this.update(macAddress, color)
-    case Update.Static(scene) => this.update(macAddress, scene)
-    case Update.Dynamic(scene, speed) => this.update(macAddress, scene, speed)
-    case Update.Speed(speed) => this.update(macAddress, speed)
-    case Update.Status(status) => this.update(macAddress, status)
+  def update(macAddress: MacAddress, update: Update): UIO[Unit]
 
   /**
    * Updates the lights at the specified MAC addresses using the specified update.
@@ -224,19 +223,4 @@ trait Lighting:
    * @param update       The update to apply to the lights.
    * @return The number of lights found and updated.
    */
-  final def updateAll(macAddresses: Iterable[MacAddress], update: Update): UIO[Int] = update match
-    case Update.Enabled(enabled) => updateAll(macAddresses, enabled)
-    case Update.Brightness(brightness) => updateAll(macAddresses, brightness)
-    case Update.Temperature(temperature) => updateAll(macAddresses, temperature)
-    case Update.Color(color) => updateAll(macAddresses, color)
-    case Update.Static(scene) => updateAll(macAddresses, scene)
-    case Update.Dynamic(scene, speed) => updateAll(macAddresses, scene, speed)
-    case Update.Speed(speed) => updateAll(macAddresses, speed)
-    case Update.Status(status) => updateAll(macAddresses, status)
-
-  /**
-   * Subscribes to events from this service.
-   *
-   * @return A stream of events published by this service.
-   */
-  def subscribe: URIO[Scope, UStream[(Light, Option[Source])]]
+  def updateAll(macAddresses: Iterable[MacAddress], update: Update): UIO[Unit]

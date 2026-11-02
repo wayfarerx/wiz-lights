@@ -26,8 +26,22 @@ import io.circe.generic.semiauto.deriveEncoder
  */
 sealed trait Request:
 
+  /** The concrete type of this request. */
+  type Self <: Request
+  
+  /** The method this request invokes, */
+  def method: String
+
   /** The optional correlation ID. */
   def id: Option[Int]
+
+  /**
+   * Returns a copy of this request but with the specified ID.
+   *
+   * @param id THe ID to set on the returned copy.
+   * @return A copy of this request but with the specified ID.
+   */
+  def withId(id: Option[Int]): Self
 
 /**
  * Definitions associated with requests.
@@ -67,7 +81,16 @@ object Request:
  *
  * @param id The optional correlation ID.
  */
-case class GetPilotRequest(id: Option[Int] = None) extends Request
+case class GetPilotRequest(id: Option[Int] = None) extends Request:
+
+  /* The concrete type of this request. */
+  override type Self = GetPilotRequest
+
+  /* The method this request invokes, */
+  override def method: String = GetPilotMethod
+
+  /* Return a copy of this request but with the specified ID. */
+  override def withId(id: Option[Int]): Self = copy(id = id)
 
 /**
  * Definitions associated with get pilot requests.
@@ -82,7 +105,16 @@ object GetPilotRequest:
  *
  * @param id The optional correlation ID.
  */
-case class GetSystemConfigRequest(id: Option[Int] = None) extends Request
+case class GetSystemConfigRequest(id: Option[Int] = None) extends Request:
+
+  /* The concrete type of this request. */
+  override type Self = GetSystemConfigRequest
+
+  /* The method this request invokes, */
+  override def method: String = GetSystemConfigMethod
+
+  /* Return a copy of this request but with the specified ID. */
+  override def withId(id: Option[Int]): Self = copy(id = id)
 
 /**
  * Definitions associated with get system config requests.
@@ -105,7 +137,16 @@ case class RegistrationRequest(
   phoneIp: String,
   register: Boolean = true,
   id: Option[Int] = None
-) extends Request
+) extends Request:
+
+  /* The concrete type of this request. */
+  override type Self = RegistrationRequest
+
+  /* The method this request invokes, */
+  override def method: String = RegistrationMethod
+
+  /* Return a copy of this request but with the specified ID. */
+  override def withId(id: Option[Int]): Self = copy(id = id)
 
 /**
  * Definitions associated with registration requests.
@@ -142,7 +183,16 @@ case class SetPilotRequest(
   c: Option[Int] = None,
   w: Option[Int] = None,
   id: Option[Int] = None
-) extends Request
+) extends Request:
+
+  /* The concrete type of this request. */
+  override type Self = SetPilotRequest
+
+  /* The method this request invokes, */
+  override def method: String = SetPilotMethod
+
+  /* Return a copy of this request but with the specified ID. */
+  override def withId(id: Option[Int]): Self = copy(id = id)
 
 /**
  * Definitions associated with set pilot requests.
