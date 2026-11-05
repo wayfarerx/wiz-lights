@@ -37,6 +37,7 @@ import service.*
  * The live implementation of the lighting service.
  *
  * @param retryBackoffs The durations to wait between retrying outgoing messages.
+ * @param purgeTimeout  The timeout for devices that do not respond.
  * @param clock         The clock service.
  * @param network       The network service.
  * @param events        The hub of light events.
@@ -46,16 +47,18 @@ import service.*
  */
 final class LightingLive private(
   retryBackoffs: List[Duration],
+  purgeTimeout: Duration,
   clock: Clock,
   network: Network,
   events: Hub[(Light, Option[Source])],
-  devices: Ref[Map[MacAddress, State]],
+  devices: Ref.Synchronized[Map[MacAddress, State]],
   index: ConcurrentMap[InetAddress, MacAddress],
   invocations: ConcurrentMap[Int, Invocation]
 ) extends Lighting:
 
   /** The number of milliseconds since the epoch. */
   private val currentTime: UIO[Long] = clock.currentTime(TimeUnit.MILLISECONDS)
+
 
   //
   // Service implementation methods.
@@ -262,6 +265,27 @@ final class LightingLive private(
     }
   yield result
 
+  /** Purges outdated data. */
+  private def purge: UIO[Unit] = for
+    now <- currentTime
+    cutoff = now - purgeTimeout.toMillis
+    removedDevices <- devices.modifyZIO { map =>
+      val (surviving, expired) = map.partition { case (_, state) =>
+        state.lastSeen.fold(false)(_ >= cutoff)
+      }
+      ZIO.foreachDiscard(expired.values) { state =>
+        state.inetAddress.fold(ZIO.unit)(index.remove(_, state.macAddress).unit)
+      }.as((expired.values, surviving))
+    }
+    _ <- ZIO.foreachDiscard(removedDevices) { state =>
+      events.publish(Light(state.macAddress, None, None) -> None).ignore
+    }
+    activeInvocations <- invocations.toList
+    _ <- ZIO.foreachDiscard(activeInvocations) { case (id, invocation) =>
+      if invocation.createdAt < cutoff then invocations.remove(id).ignore else ZIO.unit
+    }
+  yield ()
+
   //
   // Handling of outgoing messages.
   //
@@ -305,13 +329,14 @@ final class LightingLive private(
     invocation.targets.flatMap { remaining =>
       if remaining.isEmpty then invocations.remove(invocation.id).ignore else for
         targets <- lookup(remaining)
+        _ <- ZIO.foreachDiscard(remaining.filterNot(targets.contains))(invocation.complete)
         _ <- if targets.isEmpty then invocations.remove(invocation.id).ignore else
           network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
             backoffs match
               case head :: tail =>
                 ZIO.sleep(head) *> retryLoop(invocation, request, tail)
               case Nil =>
-                ZIO.unit
+                invocations.remove(invocation.id).ignore
           }
       yield ()
     }
@@ -505,7 +530,7 @@ final class LightingLive private(
   ): UIO[Unit] = for
     macAddress <- index.get(inetAddress)
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      if payload.success then completeInvocation(id, macAddress) *> touch(macAddress) else touch(macAddress)
+      completeInvocation(id, macAddress) *> touch(macAddress)
     }
   yield ()
 
@@ -523,12 +548,15 @@ final class LightingLive private(
   ): UIO[Unit] = for
     macAddress <- index.get(inetAddress)
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      if payload.success then for
+      for
         update <- completeInvocation(id, macAddress)
         _ <- update.fold(touch(macAddress)) { update =>
-          currentTime.flatMap(t => applyChanges(inetAddress, Changes.Updates(macAddress, t, update), Some(Source.Udp)))
+          if payload.success then for
+            now <- currentTime
+            _ <- applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp))
+          yield () else touch(macAddress) *> ZIO.logWarning(s"A setPilot request failed: $update.")
         }
-      yield () else touch(macAddress)
+      yield ()
     }
   yield ()
 
@@ -545,22 +573,23 @@ final class LightingLive private(
     changes: Changes,
     source: Option[Source]
   ): UIO[State] = for
-    (oldState, newState) <- devices.modify { devices =>
+    (oldState, newState) <- devices.modifyZIO { devices =>
       val oldState = devices.getOrElse(changes.macAddress, State(changes.macAddress))
       val newState = oldState.merge(inetAddress, changes)
-      (oldState -> newState, devices.updated(changes.macAddress, newState))
+      val updateIndex = (oldState.inetAddress, newState.inetAddress) match
+        case (Some(oldInetAddress), Some(newInetAddress)) if oldInetAddress != newInetAddress =>
+          index.remove(oldInetAddress, changes.macAddress) *> index.put(newInetAddress, changes.macAddress)
+        case (Some(oldInetAddress), None) =>
+          index.remove(oldInetAddress, changes.macAddress).unit
+        case (None, Some(newInetAddress)) =>
+          index.put(newInetAddress, changes.macAddress)
+        case _ =>
+          ZIO.unit
+      updateIndex.as((oldState -> newState, devices.updated(changes.macAddress, newState)))
     }
-    _ <- (oldState.inetAddress, newState.inetAddress) match
-      case (Some(oldInetAddress), Some(newInetAddress)) if oldInetAddress != newInetAddress =>
-        index.remove(oldInetAddress) *> index.put(newInetAddress, changes.macAddress)
-      case (Some(oldInetAddress), None) =>
-        index.remove(oldInetAddress)
-      case (None, Some(newInetAddress)) =>
-        index.put(newInetAddress, changes.macAddress)
-      case _ =>
-        ZIO.unit
     _ <-
-      if newState.timeless != oldState.timeless then events.publish(newState.toLight -> source).ignore
+      val newLight = newState.toLight
+      if newLight != oldState.toLight then events.publish(newLight -> source).ignore
       else ZIO.unit
   yield newState
 
@@ -589,7 +618,7 @@ object LightingLive:
       configuration <- ZIO.service[Configuration]
       clock <- ZIO.service[Clock]
       network <- ZIO.service[Network]
-      service <- make(configuration.discoveryInterval, configuration.retryBackoffs, clock, network)
+      service <- make(configuration.discoveryInterval, configuration.purgeTimeout, configuration.retryBackoffs, clock, network)
     yield service
   }
 
@@ -597,6 +626,7 @@ object LightingLive:
    * Creates a live lighting service.
    *
    * @param discoveryInterval The frequency of broadcast discovery attempts.
+   * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @param clock             The clock service.
    * @param network           The network service.
@@ -604,17 +634,29 @@ object LightingLive:
    */
   def make(
     discoveryInterval: FiniteDuration,
+    purgeTimeout: FiniteDuration,
     retryBackoffs: List[FiniteDuration],
     clock: Clock,
     network: Network
   ): URIO[Scope, Lighting] = for
     hub <- Hub.unbounded[(Light, Option[Source])]
-    devices <- Ref.make(Map.empty[MacAddress, State])
+    devices <- Ref.Synchronized.make(Map.empty[MacAddress, State])
     index <- ConcurrentMap.make[InetAddress, MacAddress]()
     invocations <- ConcurrentMap.make[Int, Invocation]()
-    service = LightingLive(retryBackoffs.map(Duration.fromScala), clock, network, hub, devices, index, invocations)
+    service = LightingLive(
+      retryBackoffs.map(Duration.fromScala),
+      Duration.fromScala(purgeTimeout),
+      clock,
+      network,
+      hub,
+      devices,
+      index,
+      invocations
+    )
     _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
     discoveryIntervalZio = Duration.fromScala(discoveryInterval)
     _ <- service.discover
     _ <- service.discover.repeat(Schedule.spaced(discoveryIntervalZio)).delay(discoveryIntervalZio).forkScoped
+    purgeIntervalZio = Duration.fromScala(discoveryInterval * Math.PI)
+    _ <- service.purge.repeat(Schedule.spaced(purgeIntervalZio)).forkScoped
   yield service

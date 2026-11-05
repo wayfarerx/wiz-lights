@@ -29,6 +29,7 @@ import zio.{Task, ZIO}
  * @param commandPort       The network port to send commands on.
  * @param listenerPort      The network port to also listen on.
  * @param discoveryInterval The frequency of broadcast discovery attempts.
+ * @param purgeTimeout      The timeout for devices that do not respond.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  */
 case class Configuration private(
@@ -37,6 +38,7 @@ case class Configuration private(
   commandPort: Int,
   listenerPort: Int,
   discoveryInterval: FiniteDuration,
+  purgeTimeout: FiniteDuration,
   retryBackoffs: List[FiniteDuration]
 )
 
@@ -60,6 +62,9 @@ object Configuration:
   /** The default frequency of broadcast discovery attempts. */
   val DefaultDiscoveryInterval: FiniteDuration = 5.seconds
 
+  /** The default timeout for devices that do not respond. */
+  val DefaultPurgeTimeout: FiniteDuration = 30.seconds
+
   /** The default durations to wait between retrying outgoing messages. */
   val DefaultRetryBackoffs: List[FiniteDuration] = 100.milliseconds :: 150.milliseconds :: 225.milliseconds :: Nil
 
@@ -71,6 +76,7 @@ object Configuration:
    * @param commandPort       The network port to send commands on.
    * @param listenerPort      The network port to listen on.
    * @param discoveryInterval The frequency of broadcast discovery attempts.
+   * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @return A new backend configuration.
    */
@@ -80,13 +86,15 @@ object Configuration:
     commandPort: Int = DefaultCommandPort,
     listenerPort: Int = DefaultListenerPort,
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
+    purgeTimeout: FiniteDuration = DefaultPurgeTimeout,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs
   ): Task[Configuration] =
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
       validDiscoveryInterval(discoveryInterval) validate
+      validPurgeTimeout(purgeTimeout) validate
       validRetryBackoffs(retryBackoffs) map { _ =>
-      Configuration(outgoingWindow, incomingWindow, commandPort, listenerPort, discoveryInterval, retryBackoffs.toList)
+      Configuration(outgoingWindow, incomingWindow, commandPort, listenerPort, discoveryInterval, purgeTimeout, retryBackoffs.toList)
     }
 
   /**
@@ -106,6 +114,15 @@ object Configuration:
   private def validDiscoveryInterval(discoveryInterval: FiniteDuration): Task[Unit] =
     if discoveryInterval > Duration.Zero then ZIO.unit else
       ZIO.fail(IllegalArgumentException(s"Invalid discovery interval: $discoveryInterval."))
+
+  /**
+   * Validates that the purge timeout is a positive duration.
+   *
+   * @param purgeTimeout The purge timeout to validate.
+   */
+  private def validPurgeTimeout(purgeTimeout: FiniteDuration): Task[Unit] =
+    if purgeTimeout > Duration.Zero then ZIO.unit else
+      ZIO.fail(IllegalArgumentException(s"Invalid purge timeout: $purgeTimeout."))
 
   /**
    * Validates that the retry backoffs are all positive durations.

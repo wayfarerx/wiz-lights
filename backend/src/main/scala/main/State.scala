@@ -84,9 +84,6 @@ private case class State(
                   Status.White(Temperature.Medium, b)
   }
 
-  /** Returns a copy of this device state with no last seen timestamp. */
-  def timeless: State = copy(lastSeen = None)
-
   /**
    * Merges a set of changes into this device.
    *
@@ -113,15 +110,48 @@ private case class State(
       case Update.Brightness(brightness) =>
         copy(brightness = Some(brightness))
       case Update.Temperature(temperature) =>
-        copy(temperature = Some(temperature))
+        copy(
+          temperature = Some(temperature),
+          scene = None,
+          speed = None,
+          color = None
+        )
       case Update.Color(color) =>
-        copy(color = Some(color))
+        copy(
+          temperature = None,
+          scene = None,
+          speed = None,
+          color = Some(color)
+        )
       case Update.Scene(scene) =>
-        copy(scene = Some(scene))
+        scene match
+          case dynamic: Scene.Dynamic =>
+            copy(
+              temperature = None,
+              scene = Some(dynamic),
+              speed = speed.orElse(Some(Speed.Medium)),
+              color = None
+            )
+          case static: Scene.Static =>
+            copy(
+              temperature = None,
+              scene = Some(static),
+              speed = None,
+              color = None
+            )
       case Update.Dynamic(scene, speed) =>
-        copy(scene = Some(scene), speed = Some(speed))
+        copy(
+          temperature = None,
+          scene = Some(scene),
+          speed = Some(speed),
+          color = None
+        )
       case Update.Speed(speed) =>
-        copy(speed = Some(speed))
+        scene match
+          case Some(_: Scene.Dynamic) =>
+            copy(speed = Some(speed))
+          case _ =>
+            this
       case Update.Status(status) =>
         status match
           case Status.Disabled =>
@@ -202,108 +232,34 @@ private case class State(
       )
     else
       val newBrightness = changes.brightness.orElse(brightness).orElse(Some(Brightness.Brightest))
-      changes.scene match
-        case Some(dynamic: Scene.Dynamic) =>
-          copy(
-            inetAddress = Some(inetAddress),
-            signal = Some(changes.signal),
-            state = Some(true),
-            brightness = newBrightness,
-            temperature = None,
-            scene = Some(dynamic),
-            speed = changes.speed.orElse(speed).orElse(Some(Speed.Medium)),
-            color = None,
-            lastSeen = Some(changes.timestamp)
-          )
-        case Some(static: Scene.Static) =>
-          copy(
-            inetAddress = Some(inetAddress),
-            signal = Some(changes.signal),
-            state = Some(true),
-            brightness = newBrightness,
-            temperature = None,
-            scene = Some(static),
-            speed = None,
-            color = None,
-            lastSeen = Some(changes.timestamp)
-          )
-        case None =>
-          changes.temperature match
-            case Some(temp) =>
-              copy(
-                inetAddress = Some(inetAddress),
-                signal = Some(changes.signal),
-                state = Some(true),
-                brightness = newBrightness,
-                temperature = Some(temp),
-                scene = None,
-                speed = None,
-                color = None,
-                lastSeen = Some(changes.timestamp)
-              )
-            case None =>
-              changes.color match
-                case Some(clr) =>
-                  copy(
-                    inetAddress = Some(inetAddress),
-                    signal = Some(changes.signal),
-                    state = Some(true),
-                    brightness = newBrightness,
-                    temperature = None,
-                    scene = None,
-                    speed = None,
-                    color = Some(clr),
-                    lastSeen = Some(changes.timestamp)
-                  )
-                case None =>
-                  // Retain existing mode
-                  scene match
-                    case Some(dynamic: Scene.Dynamic) =>
-                      copy(
-                        inetAddress = Some(inetAddress),
-                        signal = Some(changes.signal),
-                        state = Some(true),
-                        brightness = newBrightness,
-                        speed = changes.speed.orElse(speed),
-                        lastSeen = Some(changes.timestamp)
-                      )
-                    case Some(_: Scene.Static) =>
-                      copy(
-                        inetAddress = Some(inetAddress),
-                        signal = Some(changes.signal),
-                        state = Some(true),
-                        brightness = newBrightness,
-                        lastSeen = Some(changes.timestamp)
-                      )
-                    case None =>
-                      if temperature.isDefined then
-                        copy(
-                          inetAddress = Some(inetAddress),
-                          signal = Some(changes.signal),
-                          state = Some(true),
-                          brightness = newBrightness,
-                          lastSeen = Some(changes.timestamp)
-                        )
-                      else if color.isDefined then
-                        copy(
-                          inetAddress = Some(inetAddress),
-                          signal = Some(changes.signal),
-                          state = Some(true),
-                          brightness = newBrightness,
-                          lastSeen = Some(changes.timestamp)
-                        )
-                      else
-                        copy(
-                          inetAddress = Some(inetAddress),
-                          signal = Some(changes.signal),
-                          state = Some(true),
-                          brightness = newBrightness,
-                          temperature = Some(Temperature.Medium),
-                          scene = None,
-                          speed = None,
-                          color = None,
-                          lastSeen = Some(changes.timestamp)
-                        )
+      val (newScene, newSpeed, newTemp, newColor) =
+        changes.scene match
+          case Some(dynamic: Scene.Dynamic) =>
+            (Some(dynamic), changes.speed.orElse(speed).orElse(Some(Speed.Medium)), None, None)
+          case Some(static: Scene.Static) =>
+            (Some(static), None, None, None)
+          case None =>
+            changes.temperature match
+              case Some(temp) =>
+                (None, None, Some(temp), None)
+              case None =>
+                changes.color match
+                  case Some(clr) =>
+                    (None, None, None, Some(clr))
+                  case None =>
+                    val updatedSpeed = if scene.exists(_.isDynamic) then changes.speed.orElse(speed) else speed
+                    (scene, updatedSpeed, temperature, color)
+      copy(
+        inetAddress = Some(inetAddress),
+        signal = Some(changes.signal),
+        state = Some(true),
+        brightness = newBrightness,
+        temperature = newTemp,
+        scene = newScene,
+        speed = newSpeed,
+        color = newColor,
+        lastSeen = Some(changes.timestamp)
+      )
 
   /** Returns this device state as a light. */
   def toLight: Light = Light(
