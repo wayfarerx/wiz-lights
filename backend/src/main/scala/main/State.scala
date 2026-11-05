@@ -91,10 +91,12 @@ private case class State(
    * @param changes     The changes to merge into this device.
    * @return The merged device state.
    */
-  def merge(inetAddress: InetAddress, changes: Changes): State = changes match
-    case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
-    case settings: Changes.Settings => mergeSettings(inetAddress, settings)
-    case pilot: Changes.Pilot => mergePilot(inetAddress, pilot)
+  def merge(inetAddress: InetAddress, changes: Changes): State =
+    if lastSeen.fold(false)(_ > changes.timestamp) then this
+    else changes match
+      case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
+      case settings: Changes.Settings => mergeSettings(inetAddress, settings)
+      case pilot: Changes.Pilot => mergePilot(inetAddress, pilot)
 
   /**
    * Merges an update change into this device.
@@ -223,43 +225,35 @@ private case class State(
    * @return The merged device state.
    */
   private def mergePilot(inetAddress: InetAddress, changes: Changes.Pilot): State =
-    if !changes.state then
-      copy(
-        inetAddress = Some(inetAddress),
-        signal = Some(changes.signal),
-        state = Some(false),
-        lastSeen = Some(changes.timestamp)
-      )
-    else
-      val newBrightness = changes.brightness.orElse(brightness).orElse(Some(Brightness.Brightest))
-      val (newScene, newSpeed, newTemp, newColor) =
-        changes.scene match
-          case Some(dynamic: Scene.Dynamic) =>
-            (Some(dynamic), changes.speed.orElse(speed).orElse(Some(Speed.Medium)), None, None)
-          case Some(static: Scene.Static) =>
-            (Some(static), None, None, None)
-          case None =>
-            changes.temperature match
-              case Some(temp) =>
-                (None, None, Some(temp), None)
-              case None =>
-                changes.color match
-                  case Some(clr) =>
-                    (None, None, None, Some(clr))
-                  case None =>
-                    val updatedSpeed = if scene.exists(_.isDynamic) then changes.speed.orElse(speed) else speed
-                    (scene, updatedSpeed, temperature, color)
-      copy(
-        inetAddress = Some(inetAddress),
-        signal = Some(changes.signal),
-        state = Some(true),
-        brightness = newBrightness,
-        temperature = newTemp,
-        scene = newScene,
-        speed = newSpeed,
-        color = newColor,
-        lastSeen = Some(changes.timestamp)
-      )
+    val newBrightness = changes.brightness.orElse(brightness).orElse(Some(Brightness.Brightest))
+    val (newScene, newSpeed, newTemp, newColor) =
+      changes.scene match
+        case Some(dynamic: Scene.Dynamic) =>
+          (Some(dynamic), changes.speed.orElse(speed).orElse(Some(Speed.Medium)), None, None)
+        case Some(static: Scene.Static) =>
+          (Some(static), None, None, None)
+        case None =>
+          changes.temperature match
+            case Some(temp) =>
+              (None, None, Some(temp), None)
+            case None =>
+              changes.color match
+                case Some(clr) =>
+                  (None, None, None, Some(clr))
+                case None =>
+                  val updatedSpeed = if scene.exists(_.isDynamic) then changes.speed.orElse(speed) else speed
+                  (scene, updatedSpeed, temperature, color)
+    copy(
+      inetAddress = Some(inetAddress),
+      signal = Some(changes.signal),
+      state = Some(changes.state),
+      brightness = newBrightness,
+      temperature = newTemp,
+      scene = newScene,
+      speed = newSpeed,
+      color = newColor,
+      lastSeen = Some(changes.timestamp)
+    )
 
   /** Returns this device state as a light. */
   def toLight: Light = Light(
