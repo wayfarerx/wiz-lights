@@ -633,7 +633,16 @@ final class LightingLive private(
           index.put(newInetAddress, changes.macAddress)
         case _ =>
           ZIO.unit
-      updateIndex.as((oldState -> newState, devices.updated(changes.macAddress, newState)))
+      val updatedDevices = newState.inetAddress match
+        case Some(newIp) =>
+          devices.view.mapValues { dev =>
+            if dev.macAddress != changes.macAddress && dev.inetAddress.contains(newIp) then
+              dev.copy(inetAddress = None)
+            else dev
+          }.toMap.updated(changes.macAddress, newState)
+        case None =>
+          devices.updated(changes.macAddress, newState)
+      updateIndex.as((oldState -> newState, updatedDevices))
     }
     _ <-
       val newLight = newState.toLight
