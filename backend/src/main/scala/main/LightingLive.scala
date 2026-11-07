@@ -381,7 +381,7 @@ final class LightingLive private(
     request: Option[RegistrationRequest] = None
   ): UIO[Unit] = for
     now <- currentTime
-    cutoff = now - registrationTtl.toMillis
+    cutoff = now - (registrationTtl.toMillis * 0.8).toLong
     devs <- devices.get
     unregisteredTargets = targets.filter { mac =>
       devs.get(mac).flatMap(_.registration).fold(true)(_ <= cutoff)
@@ -408,17 +408,17 @@ final class LightingLive private(
    */
   def onMessage(message: Incoming): UIO[Unit] = message.response match
     case FirstBeatResponse(payload, _) =>
-      payload.fold(onErrorResponse(FirstBeatMethod, None, _), onFirstBeat(message.address, _))
+      payload.fold(onErrorResponse(FirstBeatMethod, message.address, None, _), onFirstBeat(message.address, _))
     case GetSystemConfigResponse(payload, id) =>
-      payload.fold(onErrorResponse(GetSystemConfigMethod, id, _), onGetSystemConfig(message.address, id, _))
+      payload.fold(onErrorResponse(GetSystemConfigMethod, message.address, id, _), onGetSystemConfig(message.address, id, _))
     case GetPilotResponse(payload, id) =>
-      payload.fold(onErrorResponse(GetPilotMethod, id, _), onGetPilot(message.address, id, _))
+      payload.fold(onErrorResponse(GetPilotMethod, message.address, id, _), onGetPilot(message.address, id, _))
     case SyncPilotResponse(payload, _) =>
-      payload.fold(onErrorResponse(SyncPilotMethod, None, _), onSyncPilot(message.address, _))
+      payload.fold(onErrorResponse(SyncPilotMethod, message.address, None, _), onSyncPilot(message.address, _))
     case RegistrationResponse(payload, id) =>
-      payload.fold(onErrorResponse(RegistrationMethod, id, _), onRegistration(message.address, id, _))
+      payload.fold(onErrorResponse(RegistrationMethod, message.address, id, _), onRegistration(message.address, id, _))
     case SetPilotResponse(payload, id) =>
-      payload.fold(onErrorResponse(SetPilotMethod, id, _), onSetPilot(message.address, id, _))
+      payload.fold(onErrorResponse(SetPilotMethod, message.address, id, _), onSetPilot(message.address, id, _))
 
   /**
    * Called when the service receives a first beat response.
@@ -444,8 +444,8 @@ final class LightingLive private(
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
       for
-        _ <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
-        _ <- invoke(macAddresses)(GetPilotRequest())
+        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
+        _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
@@ -647,16 +647,25 @@ final class LightingLive private(
   /**
    * Called when a device has sent an error response.
    *
-   * @param method The method that the error pertains to.
-   * @param id     The correlation ID of the incoming response.
-   * @param error The payload of the error response.
+   * @param method      The method that the error pertains to.
+   * @param inetAddress The internet address of the device.
+   * @param id          The correlation ID of the incoming response.
+   * @param error       The payload of the error response.
    */
-  private def onErrorResponse(method: String, id: Option[Int], error: ErrorResponsePayload): UIO[Unit] =
-    (error.code, error.message) match
+  private def onErrorResponse(
+    method: String,
+    inetAddress: InetAddress,
+    id: Option[Int],
+    error: ErrorResponsePayload
+  ): UIO[Unit] = for
+    macAddress <- resolve(inetAddress, id)
+    _ <- macAddress.fold(ZIO.unit)(mac => completeInvocation(id, mac) *> touch(mac))
+    _ <- (error.code, error.message) match
       case (Some(code), Some(message)) => ZIO.logWarning(s"Received $method response error $code: $message")
       case (Some(code), None) => ZIO.logWarning(s"Received $method response error $code.")
       case (None, Some(message)) => ZIO.logWarning(s"Received $method response error: $message")
       case (None, None) => ZIO.logWarning(s"Received $method response error.")
+  yield ()
 
 /**
  * Factory for live lighting services.
@@ -716,7 +725,7 @@ object LightingLive:
     _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
     _ <- discovery(network, discoveryInterval)
     _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl / 2))).forkScoped
-    _ <- service.purge.repeat(Schedule.spaced(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
+    _ <- service.purge.repeat(Schedule.fixed(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
   yield service
 
   /**
