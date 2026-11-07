@@ -367,35 +367,34 @@ final class LightingLive private(
    * Registers this controller with any devices that are not currently registered.
    */
   private def register: UIO[Unit] =
-    network.localhost.flatMap {
-      case Some((mac, ip)) =>
-        for
-          now <- currentTime
-          cutoff = now - registrationTtl.toMillis
-          devices <- devices.get
-          targets = devices.values.collect {
-            case state if state.registration.fold(true)(_ <= cutoff) => state.macAddress
-          }
-          _ <- registerWith(targets, Some(RegistrationRequest(mac, ip)))
-        yield ()
-      case None =>
-        ZIO.unit
-    }
+    devices.get.flatMap(devs => registerWith(devs.keys))
 
   /**
-   * Registers this controller with the specified device IP.
+   * Registers this controller with the specified devices if they are not currently registered
+   * or if their registration has expired.
    *
-   * @param targets The device MAC addresses to register with.
-   * @param request The optional request to send.
+   * @param targets The device MAC addresses to consider registering with.
+   * @param request The optional pre-constructed registration request.
    */
-  private def registerWith(targets: Iterable[MacAddress], request: Option[RegistrationRequest] = None): UIO[Unit] = for
-    registration <- request.fold {
-      network.localhost.flatMap {
-        case Some((mac, ip)) => ZIO.some(RegistrationRequest(mac, ip))
-        case None => ZIO.none
-      }
-    }(ZIO.some)
-    _ <- registration.fold(ZIO.unit)(invoke(targets)(_))
+  private def registerWith(
+    targets: Iterable[MacAddress],
+    request: Option[RegistrationRequest] = None
+  ): UIO[Unit] = for
+    now <- currentTime
+    cutoff = now - registrationTtl.toMillis
+    devs <- devices.get
+    unregisteredTargets = targets.filter { mac =>
+      devs.get(mac).flatMap(_.registration).fold(true)(_ <= cutoff)
+    }
+    _ <- if unregisteredTargets.isEmpty then ZIO.unit else for
+      registration <- request.fold {
+        network.localhost.flatMap {
+          case Some((mac, ip)) => ZIO.some(RegistrationRequest(mac, ip))
+          case None => ZIO.none
+        }
+      }(ZIO.some)
+      _ <- registration.fold(ZIO.unit)(invoke(unregisteredTargets)(_))
+    yield ()
   yield ()
 
   //
@@ -480,9 +479,8 @@ final class LightingLive private(
       for
         _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <-
-          if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) *> registerWith(macAddresses)
-          else ZIO.unit
+        _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
+        _ <- registerWith(macAddresses)
       yield ()
     }
   yield ()
@@ -520,9 +518,8 @@ final class LightingLive private(
       for
         _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <-
-          if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) *> registerWith(macAddresses)
-          else ZIO.unit
+        _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- registerWith(macAddresses)
       yield ()
     }
   yield ()
@@ -561,7 +558,7 @@ final class LightingLive private(
       for
         newDevice <- applyChanges(inetAddress, changes, source)
         _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
-        _ <- if newDevice.registration.isEmpty then registerWith(macAddresses) else ZIO.unit
+        _ <- registerWith(macAddresses)
       yield ()
     }
   yield ()
@@ -600,7 +597,7 @@ final class LightingLive private(
     id: Option[Int],
     payload: SetPilotResponsePayload
   ): UIO[Unit] = for
-    macAddress <- index.get(inetAddress)
+    macAddress <- resolve(inetAddress, id)
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       for
         update <- completeInvocation(id, macAddress)
