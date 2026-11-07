@@ -238,6 +238,36 @@ final class LightingLive private(
     }
 
   /**
+   * Resolves an incoming response to a target MAC address using its IP address
+   * or the correlation ID of its invocation.
+   *
+   * @param inetAddress The IP address the response was received from.
+   * @param id          The optional correlation ID included in the response.
+   * @return The target MAC address if resolved.
+   */
+  private def resolve(inetAddress: InetAddress, id: Option[Int]): UIO[Option[MacAddress]] =
+    index.get(inetAddress).flatMap {
+      case Some(macAddress) =>
+        ZIO.some(macAddress)
+      case None =>
+        id.fold[UIO[Option[MacAddress]]](ZIO.none) { invocationId =>
+          invocations.get(invocationId).flatMap {
+            case Some(invocation) =>
+              for
+                targets <- invocation.targets
+                resolved <-
+                  if targets.size == 1 then ZIO.succeed(targets.headOption)
+                  else devices.get.map { devs =>
+                    targets.find(mac => devs.get(mac).exists(_.inetAddress.contains(inetAddress)))
+                  }
+              yield resolved
+            case None =>
+              ZIO.none
+          }
+        }
+    }
+
+  /**
    * Sets the last seen timestamp of a device to the current time.
    *
    * @param macAddress The MAC address of the device being touched.
@@ -527,9 +557,11 @@ final class LightingLive private(
       ZIO.logWarningCause("Unable to interpret sync pilot source.", _) *> ZIO.none
     ))
     _ <- changes.fold(ZIO.unit) { changes =>
+      val macAddresses = changes.macAddress :: Nil
       for
         newDevice <- applyChanges(inetAddress, changes, source)
-        _ <- if newDevice.module.isEmpty then invoke(Seq(changes.macAddress))(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.registration.isEmpty then registerWith(macAddresses) else ZIO.unit
       yield ()
     }
   yield ()
@@ -546,10 +578,13 @@ final class LightingLive private(
     id: Option[Int],
     payload: RegistrationResponsePayload
   ): UIO[Unit] = for
-    macAddress <- index.get(inetAddress)
+    macAddress <- resolve(inetAddress, id)
     now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      completeInvocation(id, macAddress) *> applyChanges(inetAddress, Changes.Registered(macAddress, now), None)
+      completeInvocation(id, macAddress) *> {
+        if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, now), None)
+        else touch(macAddress) *> ZIO.logWarning(s"A registration request failed for $macAddress.")
+      }
     }
   yield ()
 
@@ -683,7 +718,7 @@ object LightingLive:
     )
     _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
     _ <- discovery(network, discoveryInterval)
-    _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl))).forkScoped
+    _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl / 2))).forkScoped
     _ <- service.purge.repeat(Schedule.spaced(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
   yield service
 
