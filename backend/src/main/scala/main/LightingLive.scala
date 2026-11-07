@@ -351,15 +351,12 @@ final class LightingLive private(
     invocation.targets.flatMap { remaining =>
       if remaining.isEmpty then invocations.remove(invocation.id).ignore else for
         targets <- lookup(remaining)
-        _ <- ZIO.foreachDiscard(remaining.filterNot(targets.contains))(invocation.complete)
-        _ <- if targets.isEmpty then invocations.remove(invocation.id).ignore else
-          network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
-            backoffs match
-              case head :: tail =>
-                ZIO.sleep(head) *> retryLoop(invocation, request, tail)
-              case Nil =>
-                invocations.remove(invocation.id).ignore
-          }
+        _ <- if targets.nonEmpty then network.publish(Outgoing.Send(targets.values.toSet, request)) else ZIO.unit
+        _ <- backoffs match
+          case head :: tail =>
+            ZIO.sleep(head) *> retryLoop(invocation, request, tail)
+          case Nil =>
+            invocations.remove(invocation.id).ignore
       yield ()
     }
 

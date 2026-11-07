@@ -41,8 +41,9 @@ import service.*
  * @param firmware     The firmware version of the light if known.
  * @param group        The group the light belongs to if known.
  * @param device       The device type ID of the light if known.
- * @param registration The timestamp when the light was registered if ever.
- * @param lastSeen     The timestamp when the light was last seen if ever.
+ * @param registration       The timestamp when the light was registered if ever.
+ * @param lastSeen           The timestamp when the light was last seen if ever.
+ * @param authoritativeUntil The timestamp until which optimistic updates are guarded.
  */
 private case class State(
   macAddress: MacAddress,
@@ -61,7 +62,8 @@ private case class State(
   group: Option[Group] = None,
   device: Option[Device] = None,
   registration: Option[Long] = None,
-  lastSeen: Option[Long] = None
+  lastSeen: Option[Long] = None,
+  authoritativeUntil: Option[Long] = None
 ):
 
   /** Returns the status of the light if known. */
@@ -99,7 +101,14 @@ private case class State(
       case registered: Changes.Registered => mergeRegistered(inetAddress, registered)
       case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
       case settings: Changes.Settings => mergeSettings(inetAddress, settings)
-      case pilot: Changes.Pilot => mergePilot(inetAddress, pilot)
+      case pilot: Changes.Pilot =>
+        if authoritativeUntil.fold(false)(_ > changes.timestamp) then
+          copy(
+            inetAddress = Some(inetAddress),
+            signal = Some(pilot.signal),
+            lastSeen = Some(changes.timestamp)
+          )
+        else mergePilot(inetAddress, pilot)
 
   /**
    * Merges a registration change into this device.
@@ -215,7 +224,8 @@ private case class State(
             )
     newState.copy(
       inetAddress = Some(inetAddress),
-      lastSeen = Some(changes.timestamp)
+      lastSeen = Some(changes.timestamp),
+      authoritativeUntil = Some(changes.timestamp + 2000L)
     )
 
   /**
