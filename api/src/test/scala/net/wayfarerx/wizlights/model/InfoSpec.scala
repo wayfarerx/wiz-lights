@@ -38,7 +38,6 @@ object InfoSpec extends ZIOSpecDefault:
         h <- Home.make(100)
         r <- Room.make(5)
         g <- Group.make(2)
-        t <- Timestamp.make(1700000000000L)
         minInfo = Info(ip)
         fullInfo = Info(
           ipAddress = ip,
@@ -48,8 +47,7 @@ object InfoSpec extends ZIOSpecDefault:
           module = Some(mod),
           firmware = Some(fw),
           group = Some(g),
-          device = Some(dev),
-          timestamp = Some(t)
+          device = Some(dev)
         )
       yield assertTrue(
         minInfo.ipAddress == ip,
@@ -60,7 +58,6 @@ object InfoSpec extends ZIOSpecDefault:
         minInfo.firmware.isEmpty,
         minInfo.group.isEmpty,
         minInfo.device.isEmpty,
-        minInfo.timestamp.isEmpty,
         fullInfo.ipAddress == ip,
         fullInfo.signal.contains(sig),
         fullInfo.home.contains(h),
@@ -68,8 +65,7 @@ object InfoSpec extends ZIOSpecDefault:
         fullInfo.module.contains(mod),
         fullInfo.firmware.contains(fw),
         fullInfo.group.contains(g),
-        fullInfo.device.contains(dev),
-        fullInfo.timestamp.contains(t)
+        fullInfo.device.contains(dev)
       )
     },
     test("encode and decode minimal Info as JSON") {
@@ -93,7 +89,6 @@ object InfoSpec extends ZIOSpecDefault:
         h <- Home.make(100)
         r <- Room.make(5)
         g <- Group.make(2)
-        t <- Timestamp.make(1700000000000L)
         fullInfo = Info(
           ipAddress = ip,
           signal = Some(sig),
@@ -102,8 +97,7 @@ object InfoSpec extends ZIOSpecDefault:
           module = Some(mod),
           firmware = Some(fw),
           group = Some(g),
-          device = Some(dev),
-          timestamp = Some(t)
+          device = Some(dev)
         )
         encoded = Encoder[Info].apply(fullInfo)
         decoded = Decoder[Info].decodeJson(encoded)

@@ -29,6 +29,7 @@ import zio.{Task, ZIO}
  * @param commandPort       The network port to send commands on.
  * @param listenerPort      The network port to also listen on.
  * @param discoveryInterval The frequency of broadcast discovery attempts.
+ * @param registrationTtl   The duration after which a bulb registration is refreshed.
  * @param purgeTimeout      The timeout for devices that do not respond.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  */
@@ -38,6 +39,7 @@ case class Configuration private(
   commandPort: Int,
   listenerPort: Int,
   discoveryInterval: FiniteDuration,
+  registrationTtl: FiniteDuration,
   purgeTimeout: FiniteDuration,
   retryBackoffs: List[FiniteDuration]
 )
@@ -62,6 +64,9 @@ object Configuration:
   /** The default frequency of broadcast discovery attempts. */
   val DefaultDiscoveryInterval: FiniteDuration = 5.seconds
 
+  /** The default duration after which a bulb registration is refreshed. */
+  val DefaultRegistrationTtl: FiniteDuration = 5.minutes
+
   /** The default timeout for devices that do not respond. */
   val DefaultPurgeTimeout: FiniteDuration = 30.seconds
 
@@ -78,6 +83,7 @@ object Configuration:
    * @param discoveryInterval The frequency of broadcast discovery attempts.
    * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
+   * @param registrationTtl   The duration after which a bulb registration is refreshed.
    * @return A new backend configuration.
    */
   def make(
@@ -86,15 +92,26 @@ object Configuration:
     commandPort: Int = DefaultCommandPort,
     listenerPort: Int = DefaultListenerPort,
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
+    registrationTtl: FiniteDuration = DefaultRegistrationTtl,
     purgeTimeout: FiniteDuration = DefaultPurgeTimeout,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs
   ): Task[Configuration] =
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
       validDiscoveryInterval(discoveryInterval) validate
+      validRegistrationTtl(registrationTtl)  validate
       validPurgeTimeout(purgeTimeout) validate
-      validRetryBackoffs(retryBackoffs) map { _ =>
-      Configuration(outgoingWindow, incomingWindow, commandPort, listenerPort, discoveryInterval, purgeTimeout, retryBackoffs.toList)
+      validRetryBackoffs(retryBackoffs)map { _ =>
+      Configuration(
+        outgoingWindow,
+        incomingWindow,
+        commandPort,
+        listenerPort,
+        discoveryInterval,
+        registrationTtl,
+        purgeTimeout,
+        retryBackoffs.toList
+      )
     }
 
   /**
@@ -114,6 +131,15 @@ object Configuration:
   private def validDiscoveryInterval(discoveryInterval: FiniteDuration): Task[Unit] =
     if discoveryInterval > Duration.Zero then ZIO.unit else
       ZIO.fail(IllegalArgumentException(s"Invalid discovery interval: $discoveryInterval."))
+
+  /**
+   * Validates that the registration TTL is a positive duration.
+   *
+   * @param registrationTtl The registration TTL to validate.
+   */
+  private def validRegistrationTtl(registrationTtl: FiniteDuration): Task[Unit] =
+    if registrationTtl > Duration.Zero then ZIO.unit else
+      ZIO.fail(IllegalArgumentException(s"Invalid registration TTL: $registrationTtl."))
 
   /**
    * Validates that the purge timeout is a positive duration.

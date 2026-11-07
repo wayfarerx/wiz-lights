@@ -41,14 +41,12 @@ object LightSpec extends ZIOSpecDefault:
         h <- Home.make(10)
         r <- Room.make(3)
         g <- Group.make(4)
-        t <- Timestamp.make(1700000000000L)
         info = Info(
           ipAddress = ip,
           signal = Some(sig),
           module = Some(mod),
           firmware = Some(fw),
           device = Some(dev),
-          timestamp = Some(t),
           home = Some(h),
           room = Some(r),
           group = Some(g)
@@ -61,7 +59,6 @@ object LightSpec extends ZIOSpecDefault:
         lightWithoutInfo.module.isEmpty,
         lightWithoutInfo.firmware.isEmpty,
         lightWithoutInfo.device.isEmpty,
-        lightWithoutInfo.lastSeen.isEmpty,
         lightWithoutInfo.home.isEmpty,
         lightWithoutInfo.room.isEmpty,
         lightWithoutInfo.group.isEmpty,
@@ -70,7 +67,6 @@ object LightSpec extends ZIOSpecDefault:
         lightWithInfo.module.contains(mod),
         lightWithInfo.firmware.contains(fw),
         lightWithInfo.device.contains(dev),
-        lightWithInfo.lastSeen.contains(t),
         lightWithInfo.home.contains(h),
         lightWithInfo.room.contains(r),
         lightWithInfo.group.contains(g)

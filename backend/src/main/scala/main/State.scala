@@ -37,11 +37,12 @@ import service.*
  * @param color       The color of the light if known.
  * @param home        The home the light belongs to if known.
  * @param room        The room the light belongs to if known.
- * @param module      The module name of the light if known.
- * @param firmware    The firmware version of the light if known.
- * @param group       The group the light belongs to if known.
- * @param device      The device type ID of the light if known.
- * @param lastSeen    The timestamp when the light was last seen if ever.
+ * @param module       The module name of the light if known.
+ * @param firmware     The firmware version of the light if known.
+ * @param group        The group the light belongs to if known.
+ * @param device       The device type ID of the light if known.
+ * @param registration The timestamp when the light was registered if ever.
+ * @param lastSeen     The timestamp when the light was last seen if ever.
  */
 private case class State(
   macAddress: MacAddress,
@@ -59,6 +60,7 @@ private case class State(
   firmware: Option[Firmware] = None,
   group: Option[Group] = None,
   device: Option[Device] = None,
+  registration: Option[Long] = None,
   lastSeen: Option[Long] = None
 ):
 
@@ -94,9 +96,26 @@ private case class State(
   def merge(inetAddress: InetAddress, changes: Changes): State =
     if lastSeen.fold(false)(_ > changes.timestamp) then this
     else changes match
+      case registered: Changes.Registered => mergeRegistered(inetAddress, registered)
       case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
       case settings: Changes.Settings => mergeSettings(inetAddress, settings)
       case pilot: Changes.Pilot => mergePilot(inetAddress, pilot)
+
+  /**
+   * Merges a registration change into this device.
+   *
+   * @param inetAddress The internet address the changes originated from.
+   * @param changes     The registration changes to merge into this device.
+   * @return The merged device state.
+   */
+  private def mergeRegistered(inetAddress: InetAddress, changes: Changes.Registered): State = {
+    val timestamp = Some(changes.timestamp)
+    copy(
+      inetAddress = Some(inetAddress),
+      registration = timestamp,
+      lastSeen = timestamp
+    )
+  }
 
   /**
    * Merges an update change into this device.

@@ -36,16 +36,18 @@ import service.*
 /**
  * The live implementation of the lighting service.
  *
- * @param retryBackoffs The durations to wait between retrying outgoing messages.
- * @param purgeTimeout  The timeout for devices that do not respond.
- * @param clock         The clock service.
- * @param network       The network service.
- * @param events        The hub of light events.
- * @param devices       The reference to known lights.
- * @param index         The index of MAC addresses by current IP address.
- * @param invocations   The reference to active response listeners for retries.
+ * @param registrationTtl The duration after which a bulb registration is refreshed.
+ * @param retryBackoffs   The durations to wait between retrying outgoing messages.
+ * @param purgeTimeout    The timeout for devices that do not respond.
+ * @param clock           The clock service.
+ * @param network         The network service.
+ * @param events          The hub of light events.
+ * @param devices         The reference to known lights.
+ * @param index           The index of MAC addresses by current IP address.
+ * @param invocations     The reference to active response listeners for retries.
  */
 final class LightingLive private(
+  registrationTtl: Duration,
   retryBackoffs: List[Duration],
   purgeTimeout: Duration,
   clock: Clock,
@@ -290,16 +292,6 @@ final class LightingLive private(
   // Handling of outgoing messages.
   //
 
-  /** Broadcasts discovery requests on the network. */
-  def discover: UIO[Unit] = for
-    _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
-    _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
-    credentials <- network.localhost
-    _ <- credentials match
-      case Some((mac, ip)) => network.publish(Outgoing.Broadcast(RegistrationRequest(mac, ip)))
-      case None => ZIO.unit
-  yield ()
-
   /**
    * Sends a message to the specified devices.
    *
@@ -342,15 +334,39 @@ final class LightingLive private(
     }
 
   /**
+   * Registers this controller with any devices that are not currently registered.
+   */
+  private def register: UIO[Unit] =
+    network.localhost.flatMap {
+      case Some((mac, ip)) =>
+        for
+          now <- currentTime
+          cutoff = now - registrationTtl.toMillis
+          devices <- devices.get
+          targets = devices.values.collect {
+            case state if state.registration.fold(true)(_ <= cutoff) => state.macAddress
+          }
+          _ <- registerWith(targets, Some(RegistrationRequest(mac, ip)))
+        yield ()
+      case None =>
+        ZIO.unit
+    }
+
+  /**
    * Registers this controller with the specified device IP.
    *
    * @param targets The device MAC addresses to register with.
+   * @param request The optional request to send.
    */
-  private def registerWith(targets: Iterable[MacAddress]): UIO[Unit] =
-    network.localhost.flatMap {
-      case Some((mac, ip)) => invoke(targets)(RegistrationRequest(mac, ip))
-      case None => ZIO.unit
-    }
+  private def registerWith(targets: Iterable[MacAddress], request: Option[RegistrationRequest] = None): UIO[Unit] = for
+    registration <- request.fold {
+      network.localhost.flatMap {
+        case Some((mac, ip)) => ZIO.some(RegistrationRequest(mac, ip))
+        case None => ZIO.none
+      }
+    }(ZIO.some)
+    _ <- registration.fold(ZIO.unit)(invoke(targets)(_))
+  yield ()
 
   //
   // Handling of incoming messages.
@@ -434,8 +450,9 @@ final class LightingLive private(
       for
         _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
-        _ <- registerWith(macAddresses)
+        _ <-
+          if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) *> registerWith(macAddresses)
+          else ZIO.unit
       yield ()
     }
   yield ()
@@ -473,8 +490,9 @@ final class LightingLive private(
       for
         _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
-        _ <- registerWith(macAddresses)
+        _ <-
+          if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) *> registerWith(macAddresses)
+          else ZIO.unit
       yield ()
     }
   yield ()
@@ -529,8 +547,9 @@ final class LightingLive private(
     payload: RegistrationResponsePayload
   ): UIO[Unit] = for
     macAddress <- index.get(inetAddress)
+    now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      completeInvocation(id, macAddress) *> touch(macAddress)
+      completeInvocation(id, macAddress) *> applyChanges(inetAddress, Changes.Registered(macAddress, now), None)
     }
   yield ()
 
@@ -618,7 +637,14 @@ object LightingLive:
       configuration <- ZIO.service[Configuration]
       clock <- ZIO.service[Clock]
       network <- ZIO.service[Network]
-      service <- make(configuration.discoveryInterval, configuration.purgeTimeout, configuration.retryBackoffs, clock, network)
+      service <- make(
+        configuration.discoveryInterval,
+        configuration.registrationTtl,
+        configuration.purgeTimeout,
+        configuration.retryBackoffs,
+        clock,
+        network
+      )
     yield service
   }
 
@@ -634,6 +660,7 @@ object LightingLive:
    */
   def make(
     discoveryInterval: FiniteDuration,
+    registrationTtl: FiniteDuration,
     purgeTimeout: FiniteDuration,
     retryBackoffs: List[FiniteDuration],
     clock: Clock,
@@ -644,6 +671,7 @@ object LightingLive:
     index <- ConcurrentMap.make[InetAddress, MacAddress]()
     invocations <- ConcurrentMap.make[Int, Invocation]()
     service = LightingLive(
+      Duration.fromScala(registrationTtl),
       retryBackoffs.map(Duration.fromScala),
       Duration.fromScala(purgeTimeout),
       clock,
@@ -654,9 +682,25 @@ object LightingLive:
       invocations
     )
     _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
-    discoveryIntervalZio = Duration.fromScala(discoveryInterval)
-    _ <- service.discover
-    _ <- service.discover.repeat(Schedule.spaced(discoveryIntervalZio)).delay(discoveryIntervalZio).forkScoped
-    purgeIntervalZio = Duration.fromScala(discoveryInterval * Math.PI)
-    _ <- service.purge.repeat(Schedule.spaced(purgeIntervalZio)).forkScoped
+    _ <- discovery(network, discoveryInterval)
+    _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl))).forkScoped
+    _ <- service.purge.repeat(Schedule.spaced(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
   yield service
+
+  /**
+   * Performs scoped discovery broadcasts at the specified interval.
+   *
+   * @param network The network to broadcast on.
+   * @param discoveryInterval The delay between subsequent discovery broadcasts.
+   */
+  private def discovery(network: Network, discoveryInterval: FiniteDuration): URIO[Scope, Unit] =
+    val getPilotRequest = Outgoing.Broadcast(GetPilotRequest())
+    val getSystemConfigRequest = Outgoing.Broadcast(GetSystemConfigRequest())
+    val repeat = Duration.fromScala(discoveryInterval)
+    val delay = Duration.fromScala(discoveryInterval / 2)
+    for
+      _ <- network.publish(getPilotRequest)
+      _ <- network.publish(getSystemConfigRequest)
+      _ <- network.publish(getPilotRequest).repeat(Schedule.fixed(repeat)).delay(delay).forkScoped
+      _ <- network.publish(getSystemConfigRequest).repeat(Schedule.fixed(repeat)).delay(repeat).forkScoped
+    yield ()

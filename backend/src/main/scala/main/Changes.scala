@@ -40,6 +40,17 @@ private sealed trait Changes:
 private object Changes:
 
   /**
+   * Marks the registration of a device.
+   *
+   * @param macAddress The MAC address of the device.
+   * @param timestamp  The timestamp when the registration was observed.
+   */
+  case class Registered(
+    macAddress: MacAddress,
+    timestamp: Long
+  ) extends Changes
+
+  /**
    * Details of an update submitted to the service.
    *
    * @param macAddress The MAC address of the device.
