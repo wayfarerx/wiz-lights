@@ -62,9 +62,7 @@ object Signal:
    * @return The signal strength enumeration value if valid or a failure.
    */
   def from(value: Int): Either[String, Signal] =
-    if value < Weakest || value > Strongest then
-      Left(s"Invalid signal value: $value. Must be between $Weakest and $Strongest.")
-    else if value >= -60 then
+    if value >= -60 then
       Right(Signal.Good)
     else if value >= -75 then
       Right(Signal.Fair)
