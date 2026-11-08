@@ -203,19 +203,19 @@ private object Changes:
       (mac, signal, brightness, temperature, scene, speed, color, source) <-
         MacAddress.make(macAddress) validate
           Signal.make(rssi) validate
-          dimming.fold(ZIO.none)(Brightness.make(_).asSome) validate
-          temp.filter(_ > 0).fold(ZIO.none)(Temperature.make(_).asSome) validate
-          sceneId.filter(_ > 0).fold(ZIO.none)(Scene.make(_).asSome) validate
-          speed.filter(_ > 0).fold(ZIO.none)(Speed.make(_).asSome) validate {
+          dimming.fold(ZIO.none)(d => Brightness.make(Math.max(Brightness.Dimmest, Math.min(Brightness.Brightest, d))).asSome) validate
+          temp.filter(_ > 0).fold(ZIO.none)(t => Temperature.make(Math.max(Temperature.Warmest, Math.min(Temperature.Coolest, t))).asSome) validate
+          sceneId.filter(_ > 0).fold[IO[IllegalArgumentException, Option[Scene]]](ZIO.none)(id => Scene.make(id).asSome.catchAll(_ => ZIO.none)) validate
+          speed.filter(_ > 0).fold(ZIO.none)(s => Speed.make(Math.max(Speed.Slowest, Math.min(Speed.Fastest, s))).asSome) validate {
             if r.isDefined || g.isDefined || b.isDefined || c.isDefined || w.isDefined then
               Color.make(
-                r.getOrElse(0),
-                g.getOrElse(0),
-                b.getOrElse(0),
-                c.getOrElse(0),
-                w.getOrElse(0)
-              ).asSome
+                Math.max(0, Math.min(255, r.getOrElse(0))),
+                Math.max(0, Math.min(255, g.getOrElse(0))),
+                Math.max(0, Math.min(255, b.getOrElse(0))),
+                Math.max(0, Math.min(255, c.getOrElse(0))),
+                Math.max(0, Math.min(255, w.getOrElse(0)))
+              ).asSome.catchAll(_ => ZIO.none)
             else ZIO.none
           } validate
-          src.fold(ZIO.none)(Source.make(_).asSome)
+          src.fold[IO[IllegalArgumentException, Option[Source]]](ZIO.none)(s => Source.make(s).asSome.catchAll(_ => ZIO.none))
     yield Pilot(mac, timestamp, signal, state, brightness, temperature, scene, speed, color, source)
