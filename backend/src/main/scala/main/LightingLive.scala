@@ -56,8 +56,8 @@ final class LightingLive private(
   invocations: ConcurrentMap[Int, Invocation]
 ) extends Lighting:
 
-  /** The number of milliseconds since the epoch. */
-  private val currentTime: UIO[Long] = clock.currentTime(TimeUnit.MILLISECONDS)
+  /** The monotonic time in milliseconds. */
+  private val currentTime: UIO[Long] = clock.nanoTime.map(TimeUnit.NANOSECONDS.toMillis)
 
 
   //
