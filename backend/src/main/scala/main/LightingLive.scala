@@ -330,9 +330,14 @@ final class LightingLive private(
    */
   private def invoke(targets: Iterable[MacAddress], update: Option[Update] = None)(request: Request): UIO[Unit] = for
     now <- currentTime
+    knownIps <- if update.isDefined then lookup(targets) else ZIO.succeed(Map.empty)
     _ <- ZIO.foreachDiscard(targets) { target =>
       for
-        _ <- if update.isDefined then cancelInvocations(target) else ZIO.unit
+        _ <- update.fold(ZIO.unit) { upd =>
+          cancelInvocations(target) *> knownIps.get(target).fold(ZIO.unit) { ip =>
+            applyChanges(ip, Changes.Updates(target, now, upd), Some(Source.Udp)).unit
+          }
+        }
         invocation <- Invocation.make(target, now, update)
         _ <- invocations.put(invocation.id, invocation)
         fiber <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
@@ -366,7 +371,8 @@ final class LightingLive private(
                 case head :: tail =>
                   ZIO.sleep(head) *> retryLoop(invocation, request, tail)
                 case Nil =>
-                  ZIO.unit
+                  invocations.remove(invocation.id).ignore *>
+                    ZIO.logWarning(s"Request timed out for $target: $request.")
             }
         }
     }
