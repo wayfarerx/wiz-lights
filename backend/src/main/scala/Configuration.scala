@@ -68,7 +68,7 @@ object Configuration:
   val DefaultRegistrationTtl: FiniteDuration = 5.minutes
 
   /** The default timeout for devices that do not respond. */
-  val DefaultPurgeTimeout: FiniteDuration = 30.seconds
+  val DefaultPurgeTimeout: FiniteDuration = 3.minutes
 
   /** The default durations to wait between retrying outgoing messages. */
   val DefaultRetryBackoffs: List[FiniteDuration] = 100.milliseconds :: 150.milliseconds :: 225.milliseconds :: Nil
