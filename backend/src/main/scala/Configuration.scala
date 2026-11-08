@@ -57,7 +57,7 @@ object Configuration:
   val DefaultOutgoingWindow: Int = 50
 
   /** The default number of incoming responses to keep in the network hub. */
-  val DefaultIncomingWindow: Int = 100
+  val DefaultIncomingWindow: Int = 500
 
   /** The default network port to send commands on. */
   val DefaultCommandPort: Int = 38899
