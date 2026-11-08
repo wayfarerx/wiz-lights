@@ -116,11 +116,11 @@ private object Changes:
     ): IO[IllegalArgumentException, Settings] = for
       (mac, home, room, module, firmware, group, device) <-
         MacAddress.make(macAddress) validate
-          homeId.fold(ZIO.none)(Home.make(_).asSome) validate
-          roomId.fold(ZIO.none)(Room.make(_).asSome) validate
+          homeId.filter(_ > 0).fold(ZIO.none)(Home.make(_).asSome) validate
+          roomId.filter(_ > 0).fold(ZIO.none)(Room.make(_).asSome) validate
           moduleName.fold(ZIO.none)(Module.make(_).asSome) validate
           fwVersion.fold(ZIO.none)(Firmware.make(_).asSome) validate
-          groupId.fold(ZIO.none)(Group.make(_).asSome) validate
+          groupId.filter(_ > 0).fold(ZIO.none)(Group.make(_).asSome) validate
           typeId.fold(ZIO.none)(Device.make(_).asSome)
     yield Settings(mac, timestamp, home, room, module, firmware, group, device)
 
