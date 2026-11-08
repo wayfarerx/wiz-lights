@@ -59,17 +59,26 @@ trait Network:
    */
   def subscribe: URIO[Scope, UStream[Incoming]]
 
+  /**
+   * Subscribes to notifications when the local network interfaces change.
+   *
+   * @return A subscription to interface change notifications.
+   */
+  def interfacesChanged: URIO[Scope, UStream[Unit]]
+
 /**
  * The live implementation of the network service.
  *
- * @param interfaces The cached local network interfaces.
- * @param outgoing   The queue of outgoing messages.
- * @param incoming   The hub of incoming messages.
+ * @param interfaces       The cached local network interfaces.
+ * @param outgoing         The queue of outgoing messages.
+ * @param incoming         The hub of incoming messages.
+ * @param interfaceChanges The hub of interface change notifications.
  */
 final class NetworkLive private(
   interfaces: Ref[List[Local]],
   outgoing: Queue[Outgoing],
-  incoming: Hub[Incoming]
+  incoming: Hub[Incoming],
+  interfaceChanges: Hub[Unit]
 ) extends Network:
 
   /* Return the default local MAC address and internet address if available. */
@@ -91,6 +100,10 @@ final class NetworkLive private(
   /* Subscribe to responses received across all response ports. */
   override def subscribe: URIO[Scope, UStream[Incoming]] =
     ZStream.fromHubScoped(incoming)
+
+  /* Subscribe to notifications when the local network interfaces change. */
+  override def interfacesChanged: URIO[Scope, UStream[Unit]] =
+    ZStream.fromHubScoped(interfaceChanges)
 
 /**
  * Factory for live network services.
@@ -139,17 +152,18 @@ object NetworkLive:
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
       outgoing <- Queue.sliding[Outgoing](outgoingWindow)
       incoming <- Hub.sliding[Incoming](incomingWindow)
+      interfaceChanges <- Hub.sliding[Unit](16)
       received = incoming.publish(_: Incoming).ignore
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
       refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
       interfaces <- Ref.make[List[Local]](Nil)
       broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
-      _ <- refreshNetworkInfo(interfaces, broadcastAddresses)
-      _ <- refreshNetworkInfo(interfaces, broadcastAddresses)
+      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges)
+      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges)
         .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
       _ <- ZStream.fromQueue(outgoing).foreach(write(broadcastAddresses, commandSocket, _)).forkScoped
-    yield NetworkLive(interfaces, outgoing, incoming)
+    yield NetworkLive(interfaces, outgoing, incoming, interfaceChanges)
 
   /**
    * Acquires an event loop group.
@@ -172,10 +186,12 @@ object NetworkLive:
    *
    * @param interfacesRef         The reference to the current local interfaces.
    * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
+   * @param interfaceChanges     The hub of interface change notifications.
    */
   private def refreshNetworkInfo(
     interfacesRef: Ref[List[Local]],
-    broadcastAddressesRef: Ref[Set[InetAddress]]
+    broadcastAddressesRef: Ref[Set[InetAddress]],
+    interfaceChanges: Hub[Unit]
   ): UIO[Unit] = for
     interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toSeq))
       .catchAllCause(ZIO.logInfoCause("Cannot list the network interfaces.", _).map(_ => Seq.empty[NetworkInterface]))
@@ -199,14 +215,19 @@ object NetworkLive:
         }
       }
     }.sortBy(!_._1).map(_._2).toList
-    _ <- interfacesRef.set(localInterfaces)
     interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
     broadcastAddresses <- interfaceAddresses.flatMap(Option apply _.getBroadcast) match
       case Nil => DefaultBroadcastAddresses.catchAllCause {
         ZIO.logWarningCause("Cannot find any broadcast addresses.", _) map (_ => Set.empty)
       }
       case some => ZIO.succeed(some.toSet)
+    oldInterfaces <- interfacesRef.get
+    oldBroadcast <- broadcastAddressesRef.get
+    _ <- interfacesRef.set(localInterfaces)
     _ <- broadcastAddressesRef.set(broadcastAddresses)
+    _ <- if localInterfaces != oldInterfaces || broadcastAddresses != oldBroadcast then
+      interfaceChanges.publish(()).ignore
+    else ZIO.unit
   yield ()
 
   /**

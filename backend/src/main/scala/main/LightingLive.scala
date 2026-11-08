@@ -458,6 +458,14 @@ final class LightingLive private(
     }
 
   /**
+   * Registers this controller with all known devices, forcing re-registration.
+   *
+   * @return An effect that completes when registration requests have been dispatched.
+   */
+  def forceRegister: UIO[Unit] =
+    devices.get.flatMap(devs => registerWith(devs.keys, force = true))
+
+  /**
    * Registers this controller with any devices that are not currently registered.
    */
   private def register: UIO[Unit] =
@@ -872,6 +880,9 @@ object LightingLive:
         .runDrain
         .forkScoped
     }
+    _ <- network.interfacesChanged.flatMap { stream =>
+      stream.mapZIO(_ => service.forceRegister).runDrain
+    }.forkScoped
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
     _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
     _ <- if seeds.nonEmpty then
