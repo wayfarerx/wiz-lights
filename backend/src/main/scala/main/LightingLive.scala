@@ -161,9 +161,10 @@ final class LightingLive private(
     case Update.Brightness(brightness) =>
       invoke(macAddresses, Some(update))(SetPilotRequest(dimming = Some(brightness)))
     case Update.Temperature(temperature) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(temp = Some(temperature)))
+      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), temp = Some(temperature)))
     case Update.Color(color) =>
       invoke(macAddresses, Some(update))(SetPilotRequest(
+        state = Some(true),
         r = Some(color.red),
         g = Some(color.green),
         b = Some(color.blue),
@@ -171,9 +172,9 @@ final class LightingLive private(
         w = Some(color.warm)
       ))
     case Update.Scene(scene) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(sceneId = Some(scene.id)))
+      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), sceneId = Some(scene.id)))
     case Update.Dynamic(scene, speed) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(sceneId = Some(scene.id), speed = Some(speed)))
+      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed)))
     case Update.Speed(speed) =>
       invoke(macAddresses, Some(update))(SetPilotRequest(speed = Some(speed)))
     case Update.Status(status) =>
