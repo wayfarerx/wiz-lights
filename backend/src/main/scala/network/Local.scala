@@ -18,19 +18,19 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import java.net.{Inet4Address, InetAddress}
+import java.net.InetAddress
 import java.nio.ByteBuffer
 
 /**
  * Information about a local network interface.
  *
  * @param macAddress   The MAC address of the interface in hexadecimal.
- * @param ipAddress    The IPv4 address of the interface.
+ * @param ipAddress    The IP address of the interface.
  * @param prefixLength The subnet prefix length (e.g., 24 for a /24 subnet).
  */
-case class LocalInterface(
+case class Local(
   macAddress: String,
-  ipAddress: Inet4Address,
+  ipAddress: InetAddress,
   prefixLength: Short
 ):
 
@@ -40,10 +40,12 @@ case class LocalInterface(
    * @param target The target internet address to test.
    * @return True if the target internet address is on the same subnet as this interface.
    */
-  def matches(target: InetAddress): Boolean = target match
-    case target4: Inet4Address =>
-      val targetInt = ByteBuffer.wrap(target4.getAddress).getInt
-      val localInt = ByteBuffer.wrap(ipAddress.getAddress).getInt
+  def matches(target: InetAddress): Boolean =
+    val targetBytes = target.getAddress
+    val localBytes = ipAddress.getAddress
+    if targetBytes.length == 4 && localBytes.length == 4 then
+      val targetInt = ByteBuffer.wrap(targetBytes).getInt
+      val localInt = ByteBuffer.wrap(localBytes).getInt
       val mask = if prefixLength <= 0 then 0 else if prefixLength >= 32 then -1 else -1 << (32 - prefixLength)
       (targetInt & mask) == (localInt & mask)
-    case _ => false
+    else false

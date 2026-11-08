@@ -18,7 +18,7 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import java.net.{Inet4Address, InetAddress, NetworkInterface}
+import java.net.{InetAddress, NetworkInterface}
 
 import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
@@ -67,7 +67,7 @@ trait Network:
  * @param incoming   The hub of incoming messages.
  */
 final class NetworkLive private(
-  interfaces: Ref[List[LocalInterface]],
+  interfaces: Ref[List[Local]],
   outgoing: Queue[Outgoing],
   incoming: Hub[Incoming]
 ) extends Network:
@@ -143,7 +143,7 @@ object NetworkLive:
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
       refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
-      interfaces <- Ref.make[List[LocalInterface]](Nil)
+      interfaces <- Ref.make[List[Local]](Nil)
       broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
       _ <- refreshNetworkInfo(interfaces, broadcastAddresses)
       _ <- refreshNetworkInfo(interfaces, broadcastAddresses)
@@ -174,7 +174,7 @@ object NetworkLive:
    * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
    */
   private def refreshNetworkInfo(
-    interfacesRef: Ref[List[LocalInterface]],
+    interfacesRef: Ref[List[Local]],
     broadcastAddressesRef: Ref[Set[InetAddress]]
   ): UIO[Unit] = for
     interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toSeq))
@@ -191,11 +191,11 @@ object NetworkLive:
       val macOpt = Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_)).orElse(fallbackMac)
       macOpt.toList.flatMap { mac =>
         i.getInterfaceAddresses.asScala.flatMap { ifAddr =>
-          ifAddr.getAddress match
-            case ip4: Inet4Address =>
-              val hasBroadcast = ifAddr.getBroadcast != null
-              Some((hasBroadcast, LocalInterface(mac, ip4, ifAddr.getNetworkPrefixLength)))
-            case _ => None
+          val addr = ifAddr.getAddress
+          if addr.getAddress.length == 4 then
+            val hasBroadcast = ifAddr.getBroadcast != null
+            Some((hasBroadcast, Local(mac, addr, ifAddr.getNetworkPrefixLength)))
+          else None
         }
       }
     }.sortBy(!_._1).map(_._2).toList
