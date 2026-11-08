@@ -36,16 +36,18 @@ import service.*
 /**
  * The live implementation of the lighting service.
  *
- * @param registrationTtl The duration after which a bulb registration is refreshed.
- * @param retryBackoffs   The durations to wait between retrying outgoing messages.
- * @param purgeTimeout    The timeout for devices that do not respond.
- * @param clock           The clock service.
- * @param network         The network service.
- * @param events          The hub of light events.
- * @param devices         The reference to known lights.
- * @param invocations     The reference to active response listeners for retries.
+ * @param discoveryInterval The frequency of broadcast discovery attempts.
+ * @param registrationTtl   The duration after which a bulb registration is refreshed.
+ * @param retryBackoffs     The durations to wait between retrying outgoing messages.
+ * @param purgeTimeout      The timeout for devices that do not respond.
+ * @param clock             The clock service.
+ * @param network           The network service.
+ * @param events            The hub of light events.
+ * @param devices           The reference to known lights.
+ * @param invocations       The reference to active response listeners for retries.
  */
 final class LightingLive private(
+  discoveryInterval: Duration,
   registrationTtl: Duration,
   retryBackoffs: List[Duration],
   purgeTimeout: Duration,
@@ -284,10 +286,30 @@ final class LightingLive private(
     }
   yield result
 
+  /**
+   * Performs periodic discovery, unicast health probing, and inactive device disconnection.
+   */
+  private def discover: UIO[Unit] = for
+    now <- currentTime
+    _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
+    devs <- devices.get
+    probeCutoff = now - discoveryInterval.toMillis
+    silentIps = devs.values.collect {
+      case state if state.inetAddress.isDefined && state.lastSeen.fold(true)(_ <= probeCutoff) =>
+        state.inetAddress.get
+    }.toSet
+    _ <- if silentIps.nonEmpty then network.publish(Outgoing.Send(silentIps, GetPilotRequest())) else ZIO.unit
+    inactiveCutoff = now - (discoveryInterval.toMillis * 2)
+    disconnectedDevices <- devices.modify(_.disconnectInactive(inactiveCutoff))
+    _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
+      events.publish(state.toLight -> None).ignore
+    }
+  yield ()
+
   /** Purges outdated data. */
   private def purge: UIO[Unit] = for
     now <- currentTime
-    offlineCutoff = now - (purgeTimeout.toMillis / 2)
+    offlineCutoff = now - (discoveryInterval.toMillis * 2)
     cutoff = now - purgeTimeout.toMillis
     disconnectedDevices <- devices.modify(_.disconnectInactive(offlineCutoff))
     _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
@@ -772,6 +794,7 @@ object LightingLive:
     devices <- Ref.Synchronized.make(Devices())
     invocations <- ConcurrentMap.make[Int, Invocation]()
     service = LightingLive(
+      Duration.fromScala(discoveryInterval),
       Duration.fromScala(registrationTtl),
       retryBackoffs.map(Duration.fromScala),
       Duration.fromScala(purgeTimeout),
@@ -790,23 +813,9 @@ object LightingLive:
         .runDrain
         .forkScoped
     }
-    _ <- discovery(network, discoveryInterval)
+    _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
+    _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
+    _ <- service.discover.repeat(Schedule.fixed(Duration.fromScala(discoveryInterval))).delay(Duration.fromScala(discoveryInterval)).forkScoped
     _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl / 2))).forkScoped
     _ <- service.purge.repeat(Schedule.fixed(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
   yield service
-
-  /**
-   * Performs scoped discovery broadcasts at the specified interval.
-   *
-   * @param network The network to broadcast on.
-   * @param discoveryInterval The delay between subsequent discovery broadcasts.
-   */
-  private def discovery(network: Network, discoveryInterval: FiniteDuration): URIO[Scope, Unit] =
-    val getPilotRequest = Outgoing.Broadcast(GetPilotRequest())
-    val getSystemConfigRequest = Outgoing.Broadcast(GetSystemConfigRequest())
-    val repeat = Duration.fromScala(discoveryInterval)
-    for
-      _ <- network.publish(getPilotRequest)
-      _ <- network.publish(getSystemConfigRequest)
-      _ <- network.publish(getPilotRequest).repeat(Schedule.fixed(repeat)).delay(repeat).forkScoped
-    yield ()
