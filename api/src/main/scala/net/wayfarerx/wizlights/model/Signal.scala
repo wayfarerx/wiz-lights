@@ -21,8 +21,19 @@ import io.circe.{Decoder, Encoder}
 
 import zio.{IO, ZIO}
 
-/** A signal strength value for lights in the range -95 dBm to -20 dBm. */
-opaque type Signal <: Int = Int
+/**
+ * The signal strength of a light.
+ */
+enum Signal:
+
+  /** Good signal strength. */
+  case Good
+
+  /** Fair signal strength. */
+  case Fair
+
+  /** Poor signal strength. */
+  case Poor
 
 /**
  * Factory for light signal strength values.
@@ -30,35 +41,63 @@ opaque type Signal <: Int = Int
 object Signal:
 
   /** The circe encoder for signal strength values. */
-  given Encoder[Signal] = Encoder.encodeInt
+  given Encoder[Signal] = Encoder.encodeString.contramap(_.toString)
 
   /** The circe decoder for signal strength values. */
-  given Decoder[Signal] = Decoder.decodeInt.emap(from)
+  given Decoder[Signal] = Decoder.instance { cursor =>
+    if cursor.value.isNumber then Decoder.decodeInt.emap(from)(cursor)
+    else Decoder.decodeString.emap(from)(cursor)
+  }
 
-  /** The weakest possible signal. */
-  val Weakest: Signal = -95
+  /** The weakest supported signal in dBm. */
+  val Weakest: Int = -95
 
-  /** The strongest possible signal. */
-  val Strongest: Signal = -20
-
-  /** The midpoint between the weakest and strongest signal values. */
-  val Medium: Signal = (Strongest - Weakest) / 2 + Weakest
+  /** The strongest supported signal in dBm. */
+  val Strongest: Int = -20
 
   /**
-   * Attempts to create a new light signal strength definition.
+   * Attempts to determine the light signal strength from an RSSI dBm value.
    *
-   * @param value The signal strength value of the light in the range -95 dBm - -20 dBm.
-   * @return The new light signal strength definition if valid or a failure.
+   * @param value The signal strength value of the light in the range -95 dBm to -20 dBm.
+   * @return The signal strength enumeration value if valid or a failure.
    */
   def from(value: Int): Either[String, Signal] =
-    if value >= Weakest && value <= Strongest then Right(value) else
+    if value < Weakest || value > Strongest then
       Left(s"Invalid signal value: $value. Must be between $Weakest and $Strongest.")
+    else if value >= -60 then
+      Right(Signal.Good)
+    else if value >= -75 then
+      Right(Signal.Fair)
+    else
+      Right(Signal.Poor)
 
   /**
-   * Creates a new light signal strength definition.
+   * Attempts to return the signal strength with the specified name.
    *
-   * @param value The signal strength value of the light in the range -95 - -20.
-   * @return The new light signal strength definition if the value is valid.
+   * @param name The name of the signal strength to return.
+   * @return The signal strength with the specified name or a failure.
+   */
+  def from(name: String): Either[String, Signal] =
+    name.trim.toLowerCase match
+      case "good" => Right(Signal.Good)
+      case "fair" => Right(Signal.Fair)
+      case "poor" => Right(Signal.Poor)
+      case _ => Left(s"Invalid signal name: $name.")
+
+  /**
+   * Creates a light signal strength definition from an RSSI dBm value.
+   *
+   * @param value The signal strength value of the light in the range -95 to -20.
+   * @return The signal strength enumeration value if the value is valid.
    */
   def make(value: Int): IO[IllegalArgumentException, Signal] =
     ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))
+
+  /**
+   * Creates a light signal strength definition from a name.
+   *
+   * @param name The name of the signal strength.
+   * @return The signal strength enumeration value if the name is valid.
+   */
+  def make(name: String): IO[IllegalArgumentException, Signal] =
+    ZIO.fromEither(from(name)).mapError(IllegalArgumentException(_))
