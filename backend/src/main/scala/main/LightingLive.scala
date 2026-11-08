@@ -726,7 +726,7 @@ object LightingLive:
       index,
       invocations
     )
-    _ <- network.subscribe.flatMap(_.foreach(service.onMessage).forkScoped)
+    _ <- network.subscribe.flatMap(_.mapZIOParUnordered(16)(service.onMessage).runDrain.forkScoped)
     _ <- discovery(network, discoveryInterval)
     _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl / 2))).forkScoped
     _ <- service.purge.repeat(Schedule.fixed(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
