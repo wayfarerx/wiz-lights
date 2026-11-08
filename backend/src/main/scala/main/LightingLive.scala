@@ -330,18 +330,18 @@ final class LightingLive private(
   //
 
   /**
-   * Cancels any active invocations with updates targeting the specified device.
+   * Cancels any active invocations with updates targeting the specified devices.
    *
-   * @param target The target MAC address to cancel active update invocations for.
+   * @param targets The target MAC addresses to cancel active update invocations for.
    */
-  private def cancelInvocations(target: MacAddress): UIO[Unit] = for
+  private def cancelInvocations(targets: Set[MacAddress]): UIO[Unit] = for
     active <- invocations.toList
     _ <- ZIO.foreachDiscard(active) { case (id, inv) =>
       if inv.hasUpdate then
-        inv.contains(target).flatMap {
-          case true =>
+        inv.target.flatMap {
+          case Some(mac) if targets.contains(mac) =>
             inv.cancel *> invocations.remove(id).ignore
-          case false =>
+          case _ =>
             ZIO.unit
         }
       else ZIO.unit
@@ -358,13 +358,15 @@ final class LightingLive private(
   private def invoke(targets: Iterable[MacAddress], update: Option[Update] = None)(request: Request): UIO[Unit] = for
     now <- currentTime
     knownIps <- if update.isDefined then lookup(targets) else ZIO.succeed(Map.empty)
-    _ <- ZIO.foreachDiscard(targets) { target =>
-      for
-        _ <- update.fold(ZIO.unit) { upd =>
-          cancelInvocations(target) *> knownIps.get(target).fold(ZIO.unit) { ip =>
-            applyChanges(ip, Changes.Updates(target, now, upd), Some(Source.Udp)).unit
-          }
+    _ <- update.fold(ZIO.unit) { upd =>
+      cancelInvocations(targets.toSet) *> ZIO.foreachParDiscard(targets) { target =>
+        knownIps.get(target).fold(ZIO.unit) { ip =>
+          applyChanges(ip, Changes.Updates(target, now, upd), Some(Source.Udp)).unit
         }
+      }
+    }
+    _ <- ZIO.foreachParDiscard(targets) { target =>
+      for
         invocation <- Invocation.make(target, now, update)
         _ <- invocations.put(invocation.id, invocation)
         fiber <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
