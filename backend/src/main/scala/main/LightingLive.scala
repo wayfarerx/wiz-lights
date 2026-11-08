@@ -396,17 +396,22 @@ final class LightingLive private(
     unregisteredTargets = if force then targets else targets.filter { mac =>
       devs.get(mac).flatMap(_.registration).fold(true)(_ <= cutoff)
     }
-    _ <- if unregisteredTargets.isEmpty then ZIO.unit else for
-      registration <- request.fold {
-        network.localhost.flatMap {
-          case Some((mac, ip)) => ZIO.some(RegistrationRequest(mac, ip))
-          case None => ZIO.none
-        }
-      }(ZIO.some)
-      _ <- registration.fold(
-        ZIO.logWarning(s"Unable to register with ${unregisteredTargets.mkString(", ")}: local host address unavailable.")
-      )(invoke(unregisteredTargets)(_))
-    yield ()
+    _ <- if unregisteredTargets.isEmpty then ZIO.unit else request match
+      case Some(req) =>
+        invoke(unregisteredTargets)(req)
+      case None =>
+        for
+          targetsWithLocal <- ZIO.foreach(unregisteredTargets.toList) { mac =>
+            val targetIp = devs.get(mac).flatMap(_.inetAddress)
+            targetIp.fold(network.localhost)(network.localhost).map(mac -> _)
+          }
+          _ <- ZIO.foreachDiscard(targetsWithLocal.groupBy(_._2)) {
+            case (Some((localMac, localIp)), targets) =>
+              invoke(targets.map(_._1))(RegistrationRequest(localMac, localIp))
+            case (None, targets) =>
+              ZIO.logWarning(s"Unable to register with ${targets.map(_._1).mkString(", ")}: local host address unavailable.")
+          }
+        yield ()
   yield ()
 
   //
