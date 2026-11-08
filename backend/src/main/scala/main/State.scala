@@ -102,13 +102,15 @@ private case class State(
       case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
       case settings: Changes.Settings => mergeSettings(inetAddress, settings)
       case pilot: Changes.Pilot =>
-        if authoritativeUntil.fold(false)(_ > changes.timestamp) then
+        if authoritativeUntil.fold(false)(_ > changes.timestamp) && !pilot.source.exists(_ != Source.Udp) then
           copy(
             inetAddress = Some(inetAddress),
             signal = Some(pilot.signal),
             lastSeen = Some(changes.timestamp)
           )
-        else mergePilot(inetAddress, pilot)
+        else
+          val base = if pilot.source.exists(_ != Source.Udp) then copy(authoritativeUntil = None) else this
+          base.mergePilot(inetAddress, pilot)
 
   /**
    * Merges a registration change into this device.

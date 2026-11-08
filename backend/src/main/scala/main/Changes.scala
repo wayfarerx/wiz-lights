@@ -146,7 +146,8 @@ private object Changes:
     temperature: Option[Temperature] = None,
     scene: Option[Scene] = None,
     speed: Option[Speed] = None,
-    color: Option[Color] = None
+    color: Option[Color] = None,
+    source: Option[Source] = None
   ) extends Changes
 
   /**
@@ -157,19 +158,20 @@ private object Changes:
     /**
      * Creates a pilot change from raw response payload components.
      *
-     * @param macAddress The MAC address of the device.
-     * @param timestamp  The timestamp when the device change was observed.
-     * @param rssi       The Signal Strength Indicator.
-     * @param state      Whether the light is enabled.
-     * @param dimming    The brightness level if present.
-     * @param sceneId    The scene ID if present.
-     * @param speed      The dynamic scene speed if present.
-     * @param temp       The color temperature if present.
-     * @param r          The red component if present.
-     * @param g          The green component if present.
-     * @param b          The blue component if present.
-     * @param c          The cool white component if present.
-     * @param w          The warm white component if present.
+     * @param macAddress  The MAC address of the device.
+     * @param timestamp   The timestamp when the device change was observed.
+     * @param rssi        The Signal Strength Indicator.
+     * @param state       Whether the light is enabled.
+     * @param dimming     The brightness level if present.
+     * @param sceneId     The scene ID if present.
+     * @param speed       The dynamic scene speed if present.
+     * @param temp        The color temperature if present.
+     * @param r           The red component if present.
+     * @param g           The green component if present.
+     * @param b           The blue component if present.
+     * @param c           The cool white component if present.
+     * @param w           The warm white component if present.
+     * @param src         The optional source of the change.
      * @return A pilot change if all specified components are valid.
      */
     def make(
@@ -185,9 +187,10 @@ private object Changes:
       g: Option[Int] = None,
       b: Option[Int] = None,
       c: Option[Int] = None,
-      w: Option[Int] = None
+      w: Option[Int] = None,
+      src: Option[String] = None
     ): IO[IllegalArgumentException, Pilot] = for
-      (mac, signal, brightness, temperature, scene, speed, color) <-
+      (mac, signal, brightness, temperature, scene, speed, color, source) <-
         MacAddress.make(macAddress) validate
           Signal.make(rssi) validate
           dimming.fold(ZIO.none)(Brightness.make(_).asSome) validate
@@ -203,5 +206,6 @@ private object Changes:
                 w.getOrElse(0)
               ).asSome
             else ZIO.none
-          }
-    yield Pilot(mac, timestamp, signal, state, brightness, temperature, scene, speed, color)
+          } validate
+          src.fold(ZIO.none)(Source.make(_).asSome)
+    yield Pilot(mac, timestamp, signal, state, brightness, temperature, scene, speed, color, source)

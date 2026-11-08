@@ -356,7 +356,7 @@ final class LightingLive private(
           case head :: tail =>
             ZIO.sleep(head) *> retryLoop(invocation, request, tail)
           case Nil =>
-            invocations.remove(invocation.id).ignore
+            ZIO.unit
       yield ()
     }
 
@@ -545,15 +545,13 @@ final class LightingLive private(
       payload.g,
       payload.b,
       payload.c,
-      payload.w
+      payload.w,
+      payload.src
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret sync pilot changes.", _).map(_ => None))
-    source <- payload.src.fold(ZIO.none)(Source.make(_).asSome.catchAllCause(
-      ZIO.logWarningCause("Unable to interpret sync pilot source.", _) *> ZIO.none
-    ))
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
       for
-        newDevice <- applyChanges(inetAddress, changes, source)
+        newDevice <- applyChanges(inetAddress, changes, changes.source)
         _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
