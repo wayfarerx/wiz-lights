@@ -143,6 +143,7 @@ private case class State(
         copy(brightness = Some(brightness))
       case Update.Temperature(temperature) =>
         copy(
+          state = Some(true),
           temperature = Some(temperature),
           scene = None,
           speed = None,
@@ -150,6 +151,7 @@ private case class State(
         )
       case Update.Color(color) =>
         copy(
+          state = Some(true),
           temperature = None,
           scene = None,
           speed = None,
@@ -159,6 +161,7 @@ private case class State(
         scene match
           case dynamic: Scene.Dynamic =>
             copy(
+              state = Some(true),
               temperature = None,
               scene = Some(dynamic),
               speed = speed.orElse(Some(Speed.Medium)),
@@ -166,6 +169,7 @@ private case class State(
             )
           case static: Scene.Static =>
             copy(
+              state = Some(true),
               temperature = None,
               scene = Some(static),
               speed = None,
@@ -173,6 +177,7 @@ private case class State(
             )
       case Update.Dynamic(scene, speed) =>
         copy(
+          state = Some(true),
           temperature = None,
           scene = Some(scene),
           speed = Some(speed),
