@@ -219,7 +219,11 @@ final class LightingLive private(
 
   /* Subscribe to events from this service. */
   override def subscribe: URIO[Scope, UStream[(Light, Option[Source])]] =
-    ZStream.fromHubScoped(events)
+    for
+      subStream <- ZStream.fromHubScoped(events)
+      initialLights <- lights
+      initialStream = ZStream.fromIterable(initialLights.toList.sorted.map(_ -> None))
+    yield initialStream ++ subStream
 
   //
   // Helper functions.
