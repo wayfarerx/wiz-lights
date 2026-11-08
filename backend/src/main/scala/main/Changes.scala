@@ -191,9 +191,9 @@ private object Changes:
         MacAddress.make(macAddress) validate
           Signal.make(rssi) validate
           dimming.fold(ZIO.none)(Brightness.make(_).asSome) validate
-          temp.fold(ZIO.none)(Temperature.make(_).asSome) validate
-          sceneId.fold(ZIO.none)(Scene.make(_).asSome) validate
-          speed.fold(ZIO.none)(Speed.make(_).asSome) validate {
+          temp.filter(_ > 0).fold(ZIO.none)(Temperature.make(_).asSome) validate
+          sceneId.filter(_ > 0).fold(ZIO.none)(Scene.make(_).asSome) validate
+          speed.filter(_ > 0).fold(ZIO.none)(Speed.make(_).asSome) validate {
             if r.isDefined || g.isDefined || b.isDefined || c.isDefined || w.isDefined then
               Color.make(
                 r.getOrElse(0),
