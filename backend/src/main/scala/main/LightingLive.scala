@@ -442,7 +442,7 @@ final class LightingLive private(
       val macAddresses = changes.macAddress :: Nil
       for
         newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
-        _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
+        _ <- invoke(macAddresses)(GetPilotRequest())
         _ <- registerWith(macAddresses)
       yield ()
     }
