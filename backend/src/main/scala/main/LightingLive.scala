@@ -434,6 +434,7 @@ final class LightingLive private(
       for
         newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
         _ <- invoke(macAddresses)(GetPilotRequest())
+        _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
@@ -506,7 +507,7 @@ final class LightingLive private(
       for
         _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
@@ -543,7 +544,7 @@ final class LightingLive private(
       val macAddresses = changes.macAddress :: Nil
       for
         newDevice <- applyChanges(inetAddress, changes, changes.source)
-        _ <- if newDevice.module.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
@@ -709,10 +710,8 @@ object LightingLive:
     val getPilotRequest = Outgoing.Broadcast(GetPilotRequest())
     val getSystemConfigRequest = Outgoing.Broadcast(GetSystemConfigRequest())
     val repeat = Duration.fromScala(discoveryInterval)
-    val delay = Duration.fromScala(discoveryInterval / 2)
     for
       _ <- network.publish(getPilotRequest)
       _ <- network.publish(getSystemConfigRequest)
-      _ <- network.publish(getPilotRequest).repeat(Schedule.fixed(repeat)).delay(delay).forkScoped
-      _ <- network.publish(getSystemConfigRequest).repeat(Schedule.fixed(repeat)).delay(repeat).forkScoped
+      _ <- network.publish(getPilotRequest).repeat(Schedule.fixed(repeat)).delay(repeat).forkScoped
     yield ()
