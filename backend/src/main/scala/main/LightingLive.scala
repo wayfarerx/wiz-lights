@@ -378,20 +378,22 @@ final class LightingLive private(
     devices.get.flatMap(devs => registerWith(devs.keys))
 
   /**
-   * Registers this controller with the specified devices if they are not currently registered
-   * or if their registration has expired.
+   * Registers this controller with the specified devices if they are not currently registered,
+   * if their registration has expired, or if forced.
    *
    * @param targets The device MAC addresses to consider registering with.
+   * @param force   True to force registration even if the device was recently registered.
    * @param request The optional pre-constructed registration request.
    */
   private def registerWith(
     targets: Iterable[MacAddress],
+    force: Boolean = false,
     request: Option[RegistrationRequest] = None
   ): UIO[Unit] = for
     now <- currentTime
     cutoff = now - (registrationTtl.toMillis * 0.8).toLong
     devs <- devices.get
-    unregisteredTargets = targets.filter { mac =>
+    unregisteredTargets = if force then targets else targets.filter { mac =>
       devs.get(mac).flatMap(_.registration).fold(true)(_ <= cutoff)
     }
     _ <- if unregisteredTargets.isEmpty then ZIO.unit else for
@@ -476,9 +478,10 @@ final class LightingLive private(
       val macAddresses = changes.macAddress :: Nil
       for
         newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
+        _ <- devices.modify(devs => () -> devs.unregister(changes.macAddress))
         _ <- invoke(macAddresses)(GetPilotRequest())
         _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
-        _ <- registerWith(macAddresses)
+        _ <- registerWith(macAddresses, force = true)
       yield ()
     }
   yield ()

@@ -69,6 +69,17 @@ private case class Devices(
     }
 
   /**
+   * Clears the registration timestamp of the device with the specified MAC address.
+   *
+   * @param macAddress The MAC address of the device being unregistered.
+   * @return The updated devices index.
+   */
+  def unregister(macAddress: MacAddress): Devices =
+    byMac.get(macAddress).fold(this) { old =>
+      copy(byMac = byMac.updated(macAddress, old.copy(registration = None)))
+    }
+
+  /**
    * Applies changes to a device state.
    *
    * @param inetAddress The internet address of the device.
