@@ -241,18 +241,19 @@ final class LightingLive private(
    * @return The target MAC address if resolved.
    */
   private def resolve(inetAddress: InetAddress, id: Option[Int]): UIO[Option[MacAddress]] =
-    devices.get.map(_.get(inetAddress)).flatMap {
+    val byId = id.fold[UIO[Option[MacAddress]]](ZIO.none) { invocationId =>
+      invocations.get(invocationId).flatMap {
+        case Some(invocation) =>
+          invocation.target
+        case None =>
+          ZIO.none
+      }
+    }
+    byId.flatMap {
       case Some(macAddress) =>
         ZIO.some(macAddress)
       case None =>
-        id.fold[UIO[Option[MacAddress]]](ZIO.none) { invocationId =>
-          invocations.get(invocationId).flatMap {
-            case Some(invocation) =>
-              invocation.target
-            case None =>
-              ZIO.none
-          }
-        }
+        devices.get.map(_.get(inetAddress))
     }
 
   /**
