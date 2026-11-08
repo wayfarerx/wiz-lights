@@ -18,39 +18,36 @@ package net.wayfarerx.wizlights
 package backend
 package main
 
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-import scala.collection.immutable.HashSet
-
-import zio.{Clock, Ref, UIO, URIO, ZIO}
+import zio.{Ref, UIO, ZIO}
 import model.*
 import service.Update
 
 /**
- * An invocation that tracks the target devices' responses.
+ * An invocation that tracks the target device's response.
  *
- * @param id         The ID of this invocation.
- * @param createdAt  The time this invocation was created at.                  
- * @param targetsRef The reference to the set of the current targets.
- * @param update     The optional update that can complete this invocation.
+ * @param id        The ID of this invocation.
+ * @param createdAt The time this invocation was created at.
+ * @param targetRef The reference to the optional target.
+ * @param update    The optional update that can complete this invocation.
  */
 private final class Invocation private(
   val id: Int,
   val createdAt: Long,
-  targetsRef: Ref[HashSet[MacAddress]],
+  targetRef: Ref[Option[MacAddress]],
   update: Option[Update]
 ):
 
-  /** Returns the addresses of the devices that this invocation targets. */
-  def targets: UIO[HashSet[MacAddress]] = targetsRef.get
+  /** Returns the address of the device that this invocation targets. */
+  def target: UIO[Option[MacAddress]] = targetRef.get
 
   /**
    * Returns true if the specified MAC address is currently targeted.
    *
    * @param macAddress The MAC address to check for targeting.
    */
-  def contains(macAddress: MacAddress): UIO[Boolean] = targets.map(_.contains(macAddress))
+  def contains(macAddress: MacAddress): UIO[Boolean] = target.map(_.contains(macAddress))
 
   /**
    * Completes this invocation for the specified MAC address.
@@ -58,9 +55,11 @@ private final class Invocation private(
    * @param macAddress The MAC address to remove from this invocation.
    * @return The optional update associated with this invocation.
    */
-  def complete(macAddress: MacAddress): UIO[Option[Update]] = targetsRef.modify { oldTargets =>
-    val newTargets = oldTargets - macAddress
-    (if oldTargets.size == newTargets.size then None else update) -> newTargets
+  def complete(macAddress: MacAddress): UIO[Option[Update]] = targetRef.modify {
+    case Some(target) if target == macAddress =>
+      update -> None
+    case other =>
+      None -> other
   }
 
 /**
@@ -74,15 +73,15 @@ private object Invocation:
   /**
    * Creates a new invocation.
    *
-   * @param macAddresses The MAC addresses of the devices that are being invoked.
-   * @param now          The current time.
-   * @param update       The optional update associated with the invocation.
+   * @param target The MAC address of the device that is being invoked.
+   * @param now    The current time.
+   * @param update The optional update associated with the invocation.
    * @return A new invocation.
    */
-  def make(macAddresses: Iterable[MacAddress], now: Long, update: Option[Update] = None): UIO[Invocation] = for
+  def make(target: MacAddress, now: Long, update: Option[Update] = None): UIO[Invocation] = for
     id <- nextId
-    targets <- Ref.make(HashSet.from(macAddresses))
-  yield Invocation(id, now, targets, update)
+    targetRef <- Ref.make[Option[MacAddress]](Some(target))
+  yield Invocation(id, now, targetRef, update)
 
   /** Generates the next available invocation ID. */
   private def nextId: UIO[Int] =

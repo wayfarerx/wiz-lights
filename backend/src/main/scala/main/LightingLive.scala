@@ -253,14 +253,7 @@ final class LightingLive private(
         id.fold[UIO[Option[MacAddress]]](ZIO.none) { invocationId =>
           invocations.get(invocationId).flatMap {
             case Some(invocation) =>
-              for
-                targets <- invocation.targets
-                resolved <-
-                  if targets.size == 1 then ZIO.succeed(targets.headOption)
-                  else devices.get.map { devs =>
-                    targets.find(mac => devs.get(mac).exists(_.inetAddress.contains(inetAddress)))
-                  }
-              yield resolved
+              invocation.target
             case None =>
               ZIO.none
           }
@@ -291,8 +284,8 @@ final class LightingLive private(
     result <- invocation.fold[UIO[Option[Update]]](ZIO.none) { invocation =>
       for
         result <- invocation.complete(macAddress)
-        targets <- invocation.targets
-        _ <- if targets.isEmpty then invocations.remove(invocation.id) else ZIO.unit
+        target <- invocation.target
+        _ <- if target.isEmpty then invocations.remove(invocation.id) else ZIO.unit
       yield result
     }
   yield result
@@ -331,9 +324,13 @@ final class LightingLive private(
    */
   private def invoke(targets: Iterable[MacAddress], update: Option[Update] = None)(request: Request): UIO[Unit] = for
     now <- currentTime
-    invocation <- Invocation.make(targets, now, update)
-    _ <- invocations.put(invocation.id, invocation)
-    _ <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+    _ <- ZIO.foreachDiscard(targets) { target =>
+      for
+        invocation <- Invocation.make(target, now, update)
+        _ <- invocations.put(invocation.id, invocation)
+        _ <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+      yield ()
+    }
   yield ()
 
   /**
@@ -348,16 +345,19 @@ final class LightingLive private(
     request: Request,
     backoffs: List[Duration]
   ): UIO[Unit] =
-    invocation.targets.flatMap { remaining =>
-      if remaining.isEmpty then invocations.remove(invocation.id).ignore else for
-        targets <- lookup(remaining)
-        _ <- if targets.nonEmpty then network.publish(Outgoing.Send(targets.values.toSet, request)) else ZIO.unit
-        _ <- backoffs match
-          case head :: tail =>
-            ZIO.sleep(head) *> retryLoop(invocation, request, tail)
-          case Nil =>
-            ZIO.unit
-      yield ()
+    invocation.target.flatMap {
+      case None =>
+        invocations.remove(invocation.id).ignore
+      case Some(target) =>
+        for
+          targets <- lookup(target :: Nil)
+          _ <- if targets.nonEmpty then network.publish(Outgoing.Send(targets.values.toSet, request)) else ZIO.unit
+          _ <- backoffs match
+            case head :: tail =>
+              ZIO.sleep(head) *> retryLoop(invocation, request, tail)
+            case Nil =>
+              ZIO.unit
+        yield ()
     }
 
   /**
