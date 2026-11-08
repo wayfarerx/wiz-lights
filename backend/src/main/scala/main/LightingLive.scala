@@ -46,6 +46,7 @@ import service.*
  * @param events            The hub of light events.
  * @param devices           The reference to known lights.
  * @param invocations       The reference to active response listeners for retries.
+ * @param lastDispatched    The reference to recent dispatch times per device for rate limiting.
  */
 final class LightingLive private(
   discoveryInterval: Duration,
@@ -57,8 +58,12 @@ final class LightingLive private(
   network: Network,
   events: Hub[(Light, Option[Source])],
   devices: Ref.Synchronized[Devices],
-  invocations: ConcurrentMap[Int, Invocation]
+  invocations: ConcurrentMap[Int, Invocation],
+  lastDispatched: ConcurrentMap[MacAddress, Long]
 ) extends Lighting:
+
+  /** The window within which rapid continuous updates to the same device are coalesced. */
+  private val CoalesceWindowMillis: Long = 50L
 
   /** The monotonic time in milliseconds. */
   private val currentTime: UIO[Long] = clock.nanoTime.map(TimeUnit.NANOSECONDS.toMillis)
@@ -323,7 +328,8 @@ final class LightingLive private(
     }
     removedDevices <- devices.modify(_.purge(cutoff))
     _ <- ZIO.foreachDiscard(removedDevices) { state =>
-      events.publish(Light(state.macAddress, None, None) -> None).ignore
+      lastDispatched.remove(state.macAddress).ignore *>
+        events.publish(Light(state.macAddress, None, None) -> None).ignore
     }
     activeInvocations <- invocations.toList
     _ <- ZIO.foreachDiscard(activeInvocations) { case (id, invocation) =>
@@ -375,11 +381,41 @@ final class LightingLive private(
       for
         invocation <- Invocation.make(target, now, update)
         _ <- invocations.put(invocation.id, invocation)
-        fiber <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+        fiber <- dispatchLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
         _ <- invocation.bind(fiber)
       yield ()
     }
   yield ()
+
+  /**
+   * Coalesces rapid continuous updates to the same device before transmitting over UDP.
+   *
+   * @param invocation The invocation being managed.
+   * @param request    The request to send.
+   * @param backoffs   The remaining backoff durations.
+   */
+  private def dispatchLoop(
+    invocation: Invocation,
+    request: Request,
+    backoffs: List[Duration]
+  ): UIO[Unit] =
+    val delay = if invocation.hasUpdate then
+      for
+        targetOpt <- invocation.target
+        _ <- targetOpt.fold(ZIO.unit) { target =>
+          for
+            now <- currentTime
+            lastTime <- lastDispatched.get(target)
+            waitMs = lastTime.fold(0L)(last => Math.max(0L, CoalesceWindowMillis - (now - last)))
+            _ <- if waitMs > 0 then ZIO.sleep(Duration.fromMillis(waitMs)) else ZIO.unit
+            sendTime <- currentTime
+            _ <- lastDispatched.put(target, sendTime)
+          yield ()
+        }
+      yield ()
+    else ZIO.unit
+
+    delay *> retryLoop(invocation, request, backoffs)
 
   /**
    * Retries sending a request to devices that have not yet responded.
@@ -812,6 +848,7 @@ object LightingLive:
     hub <- Hub.unbounded[(Light, Option[Source])]
     devices <- Ref.Synchronized.make(Devices())
     invocations <- ConcurrentMap.make[Int, Invocation]()
+    lastDispatched <- ConcurrentMap.make[MacAddress, Long]()
     service = LightingLive(
       Duration.fromScala(discoveryInterval),
       Duration.fromScala(registrationTtl),
@@ -822,7 +859,8 @@ object LightingLive:
       network,
       hub,
       devices,
-      invocations
+      invocations,
+      lastDispatched
     )
     _ <- network.subscribe.flatMap { stream =>
       stream
