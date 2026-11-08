@@ -506,11 +506,11 @@ final class LightingLive private(
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
       for
-        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
         _ <- devices.modify(devs => () -> devs.unregister(changes.macAddress))
+        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
+        _ <- registerWith(macAddresses, force = true)
         _ <- invoke(macAddresses)(GetPilotRequest())
         _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
-        _ <- registerWith(macAddresses, force = true)
       yield ()
     }
   yield ()
