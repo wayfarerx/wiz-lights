@@ -264,16 +264,20 @@ private case class State(
         case Some(static: Scene.Static) =>
           (Some(static), None, None, None)
         case None =>
-          changes.temperature match
-            case Some(temp) =>
-              (None, None, Some(temp), None)
+          changes.color.filter(c => c.red > 0 || c.green > 0 || c.blue > 0) match
+            case Some(clr) =>
+              (None, None, None, Some(clr))
             case None =>
-              changes.color match
-                case Some(clr) =>
-                  (None, None, None, Some(clr))
+              changes.temperature match
+                case Some(temp) =>
+                  (None, None, Some(temp), None)
                 case None =>
-                  val updatedSpeed = if scene.exists(_.isDynamic) then changes.speed.orElse(speed) else speed
-                  (scene, updatedSpeed, temperature, color)
+                  changes.color match
+                    case Some(clr) =>
+                      (None, None, None, Some(clr))
+                    case None =>
+                      val updatedSpeed = if scene.exists(_.isDynamic) then changes.speed.orElse(speed) else speed
+                      (scene, updatedSpeed, temperature, color)
     copy(
       inetAddress = Some(inetAddress),
       signal = Some(changes.signal),
