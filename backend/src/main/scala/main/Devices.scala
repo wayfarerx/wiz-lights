@@ -91,6 +91,39 @@ private case class Devices(
     }
 
   /**
+   * Disconnects the specified device, marking it unreachable.
+   *
+   * @param macAddress The MAC address of the device.
+   * @return The new state if disconnected and the updated devices index.
+   */
+  def disconnect(macAddress: MacAddress): (Option[State], Devices) =
+    byMac.get(macAddress) match
+      case Some(oldState) if oldState.state.isDefined =>
+        val newState = oldState.copy(state = None, authoritativeUntil = None)
+        (Some(newState), copy(byMac = byMac.updated(macAddress, newState)))
+      case Some(oldState) =>
+        (None, copy(byMac = byMac.updated(macAddress, oldState.copy(authoritativeUntil = None))))
+      case None =>
+        (None, this)
+
+  /**
+   * Marks inactive devices as unreachable.
+   *
+   * @param cutoff The timestamp before which active devices are considered unreachable.
+   * @return The disconnected devices and the updated devices index.
+   */
+  def disconnectInactive(cutoff: Long): (List[State], Devices) =
+    val disconnected = List.newBuilder[State]
+    val updatedByMac = byMac.view.mapValues { state =>
+      if state.state.isDefined && state.lastSeen.fold(false)(_ < cutoff) then
+        val updated = state.copy(state = None, authoritativeUntil = None)
+        disconnected += updated
+        updated
+      else state
+    }.toMap
+    (disconnected.result(), copy(byMac = updatedByMac))
+
+  /**
    * Applies changes to a device state.
    *
    * @param inetAddress The internet address of the device.

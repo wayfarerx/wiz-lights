@@ -287,7 +287,12 @@ final class LightingLive private(
   /** Purges outdated data. */
   private def purge: UIO[Unit] = for
     now <- currentTime
+    offlineCutoff = now - (purgeTimeout.toMillis / 2)
     cutoff = now - purgeTimeout.toMillis
+    disconnectedDevices <- devices.modify(_.disconnectInactive(offlineCutoff))
+    _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
+      events.publish(state.toLight -> None).ignore
+    }
     removedDevices <- devices.modify(_.purge(cutoff))
     _ <- ZIO.foreachDiscard(removedDevices) { state =>
       events.publish(Light(state.macAddress, None, None) -> None).ignore
@@ -374,8 +379,12 @@ final class LightingLive private(
                   invocations.remove(invocation.id).ignore *>
                     ZIO.logWarning(s"Request timed out for $target: $request.") *> {
                       if invocation.hasUpdate then
-                        devices.modify(devs => () -> devs.clearAuthoritative(target)) *>
-                          invoke(target :: Nil)(GetPilotRequest())
+                        devices.modify(_.disconnect(target)).flatMap {
+                          case Some(newState) =>
+                            events.publish(newState.toLight -> None).ignore
+                          case None =>
+                            ZIO.unit
+                        }
                       else ZIO.unit
                     }
             }
