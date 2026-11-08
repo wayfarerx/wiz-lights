@@ -379,7 +379,9 @@ final class LightingLive private(
           case None => ZIO.none
         }
       }(ZIO.some)
-      _ <- registration.fold(ZIO.unit)(invoke(unregisteredTargets)(_))
+      _ <- registration.fold(
+        ZIO.logWarning(s"Unable to register with ${unregisteredTargets.mkString(", ")}: local host address unavailable.")
+      )(invoke(unregisteredTargets)(_))
     yield ()
   yield ()
 
