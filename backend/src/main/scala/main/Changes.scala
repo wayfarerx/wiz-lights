@@ -124,14 +124,14 @@ private object Changes:
           typeId.fold(ZIO.none)(Device.make(_).asSome)
     yield Settings(mac, timestamp, home, room, module, firmware, group, device)
 
-    /** Parses an assignment ID, mapping None to None, 0 to Some(None), and positive IDs to Some(Some(T)). */
+    /** Parses an assignment ID, mapping None to None, <= 0 to Some(None), and positive IDs to Some(Some(T)). */
     private def parseAssignment[T](
       id: Option[Int],
       make: Int => IO[IllegalArgumentException, T]
     ): IO[IllegalArgumentException, Option[Option[T]]] =
       id.fold[IO[IllegalArgumentException, Option[Option[T]]]](ZIO.none) {
-        case 0 => ZIO.succeed(Some(None))
-        case other => make(other).map(v => Some(Some(v)))
+        case id if id <= 0 => ZIO.succeed(Some(None))
+        case other => make(other).asSome.map(Some(_)).catchAll(_ => ZIO.succeed(Some(None)))
       }
 
   /**
