@@ -95,22 +95,24 @@ private case class State(
    * @param changes     The changes to merge into this device.
    * @return The merged device state.
    */
-  def merge(inetAddress: InetAddress, changes: Changes): State =
-    if lastSeen.fold(false)(_ > changes.timestamp) then this
-    else changes match
-      case registered: Changes.Registered => mergeRegistered(inetAddress, registered)
-      case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
-      case settings: Changes.Settings => mergeSettings(inetAddress, settings)
-      case pilot: Changes.Pilot =>
-        if authoritativeUntil.fold(false)(_ > changes.timestamp) && !pilot.source.exists(_ != Source.Udp) then
-          copy(
-            inetAddress = Some(inetAddress),
-            signal = Some(pilot.signal),
-            lastSeen = Some(changes.timestamp)
-          )
-        else
-          val base = if pilot.source.exists(_ != Source.Udp) then copy(authoritativeUntil = None) else this
-          base.mergePilot(inetAddress, pilot)
+  def merge(inetAddress: InetAddress, changes: Changes): State = changes match
+    case registered: Changes.Registered => mergeRegistered(inetAddress, registered)
+    case other =>
+      if lastSeen.fold(false)(_ > other.timestamp) then this
+      else other match
+        case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
+        case settings: Changes.Settings => mergeSettings(inetAddress, settings)
+        case pilot: Changes.Pilot =>
+          if authoritativeUntil.fold(false)(_ > changes.timestamp) && !pilot.source.exists(_ != Source.Udp) then
+            copy(
+              inetAddress = Some(inetAddress),
+              signal = Some(pilot.signal),
+              lastSeen = Some(changes.timestamp)
+            )
+          else
+            val base = if pilot.source.exists(_ != Source.Udp) then copy(authoritativeUntil = None) else this
+            base.mergePilot(inetAddress, pilot)
+        case _: Changes.Registered => this
 
   /**
    * Merges a registration change into this device.
@@ -119,14 +121,12 @@ private case class State(
    * @param changes     The registration changes to merge into this device.
    * @return The merged device state.
    */
-  private def mergeRegistered(inetAddress: InetAddress, changes: Changes.Registered): State = {
-    val timestamp = Some(changes.timestamp)
+  private def mergeRegistered(inetAddress: InetAddress, changes: Changes.Registered): State =
     copy(
       inetAddress = Some(inetAddress),
-      registration = timestamp,
-      lastSeen = timestamp
+      registration = Some(registration.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
+      lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp)))
     )
-  }
 
   /**
    * Merges an update change into this device.
