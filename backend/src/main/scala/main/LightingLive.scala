@@ -684,6 +684,7 @@ final class LightingLive private(
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
       for
+        _ <- if changes.source.exists(s => s != Source.Udp) then cancelInvocations(macAddresses.toSet) else ZIO.unit
         newDevice <- applyChanges(inetAddress, changes, changes.source)
         _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
