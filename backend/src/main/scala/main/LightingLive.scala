@@ -412,6 +412,27 @@ final class LightingLive private(
   //
 
   /**
+   * Determines the target key (MAC or IP) for grouping incoming messages sequentially per device.
+   *
+   * @param message The incoming message.
+   * @return The target key for the message.
+   */
+  def targetKey(message: Incoming): UIO[Either[MacAddress, InetAddress]] =
+    val macFromPayload = message.response match
+      case FirstBeatResponse(Right(p), _) => MacAddress.from(p.mac).toOption
+      case GetPilotResponse(Right(p), _) => MacAddress.from(p.mac).toOption
+      case GetSystemConfigResponse(Right(p), _) => MacAddress.from(p.mac).toOption
+      case SyncPilotResponse(Right(p), _) => MacAddress.from(p.mac).toOption
+      case _ => None
+    macFromPayload match
+      case Some(mac) => ZIO.succeed(Left(mac))
+      case None =>
+        resolve(message.address, message.response.id).map {
+          case Some(mac) => Left(mac)
+          case None => Right(message.address)
+        }
+
+  /**
    * Called when the service receives a message.
    *
    * @param message The incoming message.
@@ -716,7 +737,15 @@ object LightingLive:
       devices,
       invocations
     )
-    _ <- network.subscribe.flatMap(_.mapZIOParUnordered(16)(service.onMessage).runDrain.forkScoped)
+    _ <- network.subscribe.flatMap { stream =>
+      stream
+        .mapZIO(message => service.targetKey(message).map(_ -> message))
+        .groupByKey(_._1, 16) { (_, group) =>
+          group.mapZIO(pair => service.onMessage(pair._2))
+        }
+        .runDrain
+        .forkScoped
+    }
     _ <- discovery(network, discoveryInterval)
     _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl / 2))).forkScoped
     _ <- service.purge.repeat(Schedule.fixed(Duration.fromScala(discoveryInterval * Math.PI))).forkScoped
