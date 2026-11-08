@@ -69,24 +69,24 @@ object SignalSpec extends ZIOSpecDefault:
         madeNamePoor == Signal.Poor
       )
     },
-    test("reject signal values out of range") {
+    test("classify signal values outside standard range and reject invalid names") {
       val fromTooWeak = Signal.from(-96)
       val fromTooStrong = Signal.from(-19)
       val fromZero = Signal.from(0)
       val fromInvalidName = Signal.from("invalid")
       for
-        errTooWeak <- Signal.make(-96).flip
-        errTooStrong <- Signal.make(-19).flip
-        errZero <- Signal.make(0).flip
+        madeTooWeak <- Signal.make(-96)
+        madeTooStrong <- Signal.make(-19)
+        madeZero <- Signal.make(0)
         errInvalidName <- Signal.make("invalid").flip
       yield assertTrue(
-        fromTooWeak.isLeft,
-        fromTooStrong.isLeft,
-        fromZero.isLeft,
+        fromTooWeak == Right(Signal.Poor),
+        fromTooStrong == Right(Signal.Good),
+        fromZero == Right(Signal.Good),
         fromInvalidName.isLeft,
-        errTooWeak.getMessage == "Invalid signal value: -96. Must be between -95 and -20.",
-        errTooStrong.getMessage == "Invalid signal value: -19. Must be between -95 and -20.",
-        errZero.getMessage == "Invalid signal value: 0. Must be between -95 and -20.",
+        madeTooWeak == Signal.Poor,
+        madeTooStrong == Signal.Good,
+        madeZero == Signal.Good,
         errInvalidName.getMessage == "Invalid signal name: invalid."
       )
     },
@@ -102,7 +102,6 @@ object SignalSpec extends ZIOSpecDefault:
         decodedGoodFromString = Decoder[Signal].decodeJson(Json.fromString("Good"))
         decodedFairFromString = Decoder[Signal].decodeJson(Json.fromString("Fair"))
         decodedPoorFromString = Decoder[Signal].decodeJson(Json.fromString("Poor"))
-        invalidInt = Decoder[Signal].decodeJson(Json.fromInt(-10))
         invalidString = Decoder[Signal].decodeJson(Json.fromString("Unknown"))
         nonIntOrStringJson = Decoder[Signal].decodeJson(Json.arr())
       yield assertTrue(
@@ -113,7 +112,6 @@ object SignalSpec extends ZIOSpecDefault:
         decodedGoodFromString == Right(Signal.Good),
         decodedFairFromString == Right(Signal.Fair),
         decodedPoorFromString == Right(Signal.Poor),
-        invalidInt.isLeft,
         invalidString.isLeft,
         nonIntOrStringJson.isLeft
       )

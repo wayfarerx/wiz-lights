@@ -108,7 +108,7 @@ object InfoSpec extends ZIOSpecDefault:
     test("fail decoding when ipAddress is missing or invalid") {
       val missingIp = Json.obj("signal" -> Json.fromInt(-50))
       val invalidIp = Json.obj("ipAddress" -> Json.fromString("not-an-ip"))
-      val invalidSignal = Json.obj("ipAddress" -> Json.fromString("192.168.1.1"), "signal" -> Json.fromInt(10))
+      val invalidSignal = Json.obj("ipAddress" -> Json.fromString("192.168.1.1"), "signal" -> Json.fromString("invalid"))
       assertTrue(
         Decoder[Info].decodeJson(missingIp).isLeft,
         Decoder[Info].decodeJson(invalidIp).isLeft,
