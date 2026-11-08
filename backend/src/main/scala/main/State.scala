@@ -143,7 +143,10 @@ private case class State(
       case Update.Enabled(enabled) =>
         copy(state = Some(enabled))
       case Update.Brightness(brightness) =>
-        copy(brightness = Some(brightness))
+        copy(
+          state = Some(true),
+          brightness = Some(brightness)
+        )
       case Update.Temperature(temperature) =>
         copy(
           state = Some(true),

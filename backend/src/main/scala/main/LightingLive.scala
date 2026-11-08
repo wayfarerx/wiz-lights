@@ -159,7 +159,7 @@ final class LightingLive private(
     case Update.Enabled(enabled) =>
       invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(enabled)))
     case Update.Brightness(brightness) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(dimming = Some(brightness)))
+      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), dimming = Some(brightness)))
     case Update.Temperature(temperature) =>
       invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), temp = Some(temperature)))
     case Update.Color(color) =>
