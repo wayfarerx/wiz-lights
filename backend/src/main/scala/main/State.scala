@@ -43,6 +43,7 @@ import service.*
  * @param device       The device type ID of the light if known.
  * @param registration       The timestamp when the light was registered if ever.
  * @param lastSeen           The timestamp when the light was last seen if ever.
+ * @param updatedAt          The timestamp when the light state was last updated if ever.
  * @param authoritativeUntil The timestamp until which optimistic updates are guarded.
  */
 private case class State(
@@ -63,6 +64,7 @@ private case class State(
   device: Option[Device] = None,
   registration: Option[Long] = None,
   lastSeen: Option[Long] = None,
+  updatedAt: Option[Long] = None,
   authoritativeUntil: Option[Long] = None
 ):
 
@@ -98,7 +100,8 @@ private case class State(
   def merge(inetAddress: InetAddress, changes: Changes): State = changes match
     case registered: Changes.Registered => mergeRegistered(inetAddress, registered)
     case other =>
-      if lastSeen.fold(false)(_ > other.timestamp) then this
+      if updatedAt.fold(false)(_ > other.timestamp) then
+        copy(lastSeen = Some(lastSeen.fold(other.timestamp)(Math.max(_, other.timestamp))))
       else other match
         case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
         case settings: Changes.Settings => mergeSettings(inetAddress, settings)
@@ -107,7 +110,7 @@ private case class State(
             copy(
               inetAddress = Some(inetAddress),
               signal = Some(pilot.signal),
-              lastSeen = Some(changes.timestamp)
+              lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp)))
             )
           else
             val base = if pilot.source.exists(_ != Source.Udp) then copy(authoritativeUntil = None) else this
@@ -231,7 +234,8 @@ private case class State(
             )
     newState.copy(
       inetAddress = Some(inetAddress),
-      lastSeen = Some(changes.timestamp),
+      lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
+      updatedAt = Some(changes.timestamp),
       authoritativeUntil = Some(changes.timestamp + 2000L)
     )
 
@@ -250,7 +254,8 @@ private case class State(
     firmware = changes.firmware.orElse(firmware),
     group = changes.group.getOrElse(group),
     device = changes.device.orElse(device),
-    lastSeen = Some(changes.timestamp)
+    lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
+    updatedAt = Some(changes.timestamp)
   )
 
   /**
@@ -292,7 +297,8 @@ private case class State(
       scene = newScene,
       speed = newSpeed,
       color = newColor,
-      lastSeen = Some(changes.timestamp)
+      lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
+      updatedAt = Some(changes.timestamp)
     )
 
   /** Returns this device state as a light. */

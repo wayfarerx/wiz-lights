@@ -65,7 +65,7 @@ private case class Devices(
    */
   def touch(macAddress: MacAddress, now: Long): Devices =
     byMac.get(macAddress).fold(this) { old =>
-      copy(byMac = byMac.updated(macAddress, old.copy(lastSeen = Some(now))))
+      copy(byMac = byMac.updated(macAddress, old.copy(lastSeen = Some(old.lastSeen.fold(now)(Math.max(_, now))))))
     }
 
   /**
