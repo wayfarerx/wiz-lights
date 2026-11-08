@@ -244,11 +244,11 @@ private case class State(
    */
   private def mergeSettings(inetAddress: InetAddress, changes: Changes.Settings): State = copy(
     inetAddress = Some(inetAddress),
-    home = changes.home.orElse(home),
-    room = changes.room.orElse(room),
+    home = changes.home.getOrElse(home),
+    room = changes.room.getOrElse(room),
     module = changes.module.orElse(module),
     firmware = changes.firmware.orElse(firmware),
-    group = changes.group.orElse(group),
+    group = changes.group.getOrElse(group),
     device = changes.device.orElse(device),
     lastSeen = Some(changes.timestamp)
   )

@@ -78,11 +78,11 @@ private object Changes:
   case class Settings private(
     macAddress: MacAddress,
     timestamp: Long,
-    home: Option[Home] = None,
-    room: Option[Room] = None,
+    home: Option[Option[Home]] = None,
+    room: Option[Option[Room]] = None,
     module: Option[Module] = None,
     firmware: Option[Firmware] = None,
-    group: Option[Group] = None,
+    group: Option[Option[Group]] = None,
     device: Option[Device] = None
   ) extends Changes
 
@@ -116,13 +116,23 @@ private object Changes:
     ): IO[IllegalArgumentException, Settings] = for
       (mac, home, room, module, firmware, group, device) <-
         MacAddress.make(macAddress) validate
-          homeId.filter(_ > 0).fold(ZIO.none)(Home.make(_).asSome) validate
-          roomId.filter(_ > 0).fold(ZIO.none)(Room.make(_).asSome) validate
+          parseAssignment(homeId, Home.make) validate
+          parseAssignment(roomId, Room.make) validate
           moduleName.fold(ZIO.none)(Module.make(_).asSome) validate
           fwVersion.fold(ZIO.none)(Firmware.make(_).asSome) validate
-          groupId.filter(_ > 0).fold(ZIO.none)(Group.make(_).asSome) validate
+          parseAssignment(groupId, Group.make) validate
           typeId.fold(ZIO.none)(Device.make(_).asSome)
     yield Settings(mac, timestamp, home, room, module, firmware, group, device)
+
+    /** Parses an assignment ID, mapping None to None, 0 to Some(None), and positive IDs to Some(Some(T)). */
+    private def parseAssignment[T](
+      id: Option[Int],
+      make: Int => IO[IllegalArgumentException, T]
+    ): IO[IllegalArgumentException, Option[Option[T]]] =
+      id.fold[IO[IllegalArgumentException, Option[Option[T]]]](ZIO.none) {
+        case 0 => ZIO.succeed(Some(None))
+        case other => make(other).map(v => Some(Some(v)))
+      }
 
   /**
    * Details of pilot changes reported by a light.
