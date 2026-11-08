@@ -20,7 +20,7 @@ package main
 
 import java.util.concurrent.atomic.AtomicInteger
 
-import zio.{Ref, UIO, ZIO}
+import zio.{Fiber, Ref, UIO, ZIO}
 import model.*
 import service.Update
 
@@ -30,12 +30,14 @@ import service.Update
  * @param id        The ID of this invocation.
  * @param createdAt The time this invocation was created at.
  * @param targetRef The reference to the optional target.
+ * @param fiberRef  The reference to the optional managing fiber.
  * @param update    The optional update that can complete this invocation.
  */
 private final class Invocation private(
   val id: Int,
   val createdAt: Long,
   targetRef: Ref[Option[MacAddress]],
+  fiberRef: Ref[Option[Fiber[Nothing, Unit]]],
   update: Option[Update]
 ):
 
@@ -49,18 +51,46 @@ private final class Invocation private(
    */
   def contains(macAddress: MacAddress): UIO[Boolean] = target.map(_.contains(macAddress))
 
+  /** Returns true if this invocation has an associated update. */
+  def hasUpdate: Boolean = update.isDefined
+
+  /**
+   * Binds the managing fiber to this invocation so it can be interrupted when completed or cancelled.
+   *
+   * @param fiber The fiber executing the retry loop for this invocation.
+   */
+  def bind(fiber: Fiber[Nothing, Unit]): UIO[Unit] =
+    targetRef.get.flatMap {
+      case Some(_) => fiberRef.set(Some(fiber))
+      case None => fiber.interrupt.unit
+    }
+
+  /**
+   * Cancels this invocation, clearing its target and interrupting any active retry fiber.
+   */
+  def cancel: UIO[Unit] = for
+    _ <- targetRef.set(None)
+    maybeFiber <- fiberRef.getAndSet(None)
+    _ <- maybeFiber.fold(ZIO.unit)(_.interrupt.unit)
+  yield ()
+
   /**
    * Completes this invocation for the specified MAC address.
    *
    * @param macAddress The MAC address to remove from this invocation.
    * @return The optional update associated with this invocation.
    */
-  def complete(macAddress: MacAddress): UIO[Option[Update]] = targetRef.modify {
-    case Some(target) if target == macAddress =>
-      update -> None
-    case other =>
-      None -> other
-  }
+  def complete(macAddress: MacAddress): UIO[Option[Update]] = for
+    (upd, wasTarget) <- targetRef.modify {
+      case Some(target) if target == macAddress =>
+        (update, true) -> None
+      case other =>
+        (None, false) -> other
+    }
+    _ <- if wasTarget then
+      fiberRef.getAndSet(None).flatMap(_.fold(ZIO.unit)(_.interrupt.unit))
+    else ZIO.unit
+  yield upd
 
 /**
  * Factory for invocations.
@@ -81,7 +111,8 @@ private object Invocation:
   def make(target: MacAddress, now: Long, update: Option[Update] = None): UIO[Invocation] = for
     id <- nextId
     targetRef <- Ref.make[Option[MacAddress]](Some(target))
-  yield Invocation(id, now, targetRef, update)
+    fiberRef <- Ref.make[Option[Fiber[Nothing, Unit]]](None)
+  yield Invocation(id, now, targetRef, fiberRef, update)
 
   /** Generates the next available invocation ID. */
   private def nextId: UIO[Int] =

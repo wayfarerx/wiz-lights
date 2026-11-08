@@ -271,16 +271,16 @@ final class LightingLive private(
    *
    * @param id The possible ID of the invocation to complete.
    * @param macAddress The MAC address that completed the invocation.
-   * @return The update associated with the invocation, if any.
+   * @return The update associated with the invocation and its creation timestamp, if any.
    */
-  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[Update]] = for
+  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[(Update, Long)]] = for
     invocation <- id.fold[UIO[Option[Invocation]]](ZIO.none)(invocations.get)
-    result <- invocation.fold[UIO[Option[Update]]](ZIO.none) { invocation =>
+    result <- invocation.fold[UIO[Option[(Update, Long)]]](ZIO.none) { invocation =>
       for
         result <- invocation.complete(macAddress)
         target <- invocation.target
         _ <- if target.isEmpty then invocations.remove(invocation.id) else ZIO.unit
-      yield result
+      yield result.map(_ -> invocation.createdAt)
     }
   yield result
 
@@ -294,13 +294,32 @@ final class LightingLive private(
     }
     activeInvocations <- invocations.toList
     _ <- ZIO.foreachDiscard(activeInvocations) { case (id, invocation) =>
-      if invocation.createdAt < cutoff then invocations.remove(id).ignore else ZIO.unit
+      if invocation.createdAt < cutoff then invocation.cancel *> invocations.remove(id).ignore else ZIO.unit
     }
   yield ()
 
   //
   // Handling of outgoing messages.
   //
+
+  /**
+   * Cancels any active invocations with updates targeting the specified device.
+   *
+   * @param target The target MAC address to cancel active update invocations for.
+   */
+  private def cancelInvocations(target: MacAddress): UIO[Unit] = for
+    active <- invocations.toList
+    _ <- ZIO.foreachDiscard(active) { case (id, inv) =>
+      if inv.hasUpdate then
+        inv.contains(target).flatMap {
+          case true =>
+            inv.cancel *> invocations.remove(id).ignore
+          case false =>
+            ZIO.unit
+        }
+      else ZIO.unit
+    }
+  yield ()
 
   /**
    * Sends a message to the specified devices.
@@ -313,9 +332,11 @@ final class LightingLive private(
     now <- currentTime
     _ <- ZIO.foreachDiscard(targets) { target =>
       for
+        _ <- if update.isDefined then cancelInvocations(target) else ZIO.unit
         invocation <- Invocation.make(target, now, update)
         _ <- invocations.put(invocation.id, invocation)
-        _ <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+        fiber <- retryLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+        _ <- invocation.bind(fiber)
       yield ()
     }
   yield ()
@@ -338,7 +359,7 @@ final class LightingLive private(
       case Some(target) =>
         lookup(target :: Nil).flatMap { targets =>
           if targets.isEmpty then
-            ZIO.logWarning(s"Unable to resolve IP address for $target.")
+            ZIO.logWarning(s"Unable to resolve IP address for $target.") *> invocations.remove(invocation.id).ignore
           else
             network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
               backoffs match
@@ -589,11 +610,11 @@ final class LightingLive private(
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       for
         update <- completeInvocation(id, macAddress)
-        _ <- update.fold(touch(macAddress)) { update =>
-          if payload.success then for
-            now <- currentTime
-            _ <- applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp))
-          yield () else touch(macAddress) *> ZIO.logWarning(s"A setPilot request failed: $update.")
+        _ <- update.fold(touch(macAddress)) {
+          case (update, timestamp) =>
+            if payload.success then
+              applyChanges(inetAddress, Changes.Updates(macAddress, timestamp, update), Some(Source.Udp))
+            else touch(macAddress) *> ZIO.logWarning(s"A setPilot request failed: $update.")
         }
       yield ()
     }
