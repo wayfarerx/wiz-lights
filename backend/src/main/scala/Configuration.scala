@@ -62,7 +62,7 @@ object Configuration:
   val DefaultListenerPort: Int = 38900
 
   /** The default frequency of broadcast discovery attempts. */
-  val DefaultDiscoveryInterval: FiniteDuration = 5.seconds
+  val DefaultDiscoveryInterval: FiniteDuration = 25.seconds
 
   /** The default duration after which a bulb registration is refreshed. */
   val DefaultRegistrationTtl: FiniteDuration = 5.minutes
