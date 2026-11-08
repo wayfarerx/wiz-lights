@@ -43,7 +43,6 @@ import service.*
  * @param network         The network service.
  * @param events          The hub of light events.
  * @param devices         The reference to known lights.
- * @param index           The index of MAC addresses by current IP address.
  * @param invocations     The reference to active response listeners for retries.
  */
 final class LightingLive private(
@@ -53,8 +52,7 @@ final class LightingLive private(
   clock: Clock,
   network: Network,
   events: Hub[(Light, Option[Source])],
-  devices: Ref.Synchronized[Map[MacAddress, State]],
-  index: ConcurrentMap[InetAddress, MacAddress],
+  devices: Ref.Synchronized[Devices],
   invocations: ConcurrentMap[Int, Invocation]
 ) extends Lighting:
 
@@ -231,11 +229,7 @@ final class LightingLive private(
    * @return The internet addresses of the devices with the specified MAC addresses.
    */
   private def lookup(macAddresses: Iterable[MacAddress]): UIO[Map[MacAddress, InetAddress]] =
-    devices.get.map { map =>
-      macAddresses.foldLeft(Map.empty) { (result, macAddress) =>
-        map.get(macAddress).flatMap(_.inetAddress).fold(result)(inetAddress => result + (macAddress -> inetAddress))
-      }
-    }
+    devices.get.map(_.lookup(macAddresses))
 
   /**
    * Resolves an incoming response to a target MAC address using its IP address
@@ -246,7 +240,7 @@ final class LightingLive private(
    * @return The target MAC address if resolved.
    */
   private def resolve(inetAddress: InetAddress, id: Option[Int]): UIO[Option[MacAddress]] =
-    index.get(inetAddress).flatMap {
+    devices.get.map(_.get(inetAddress)).flatMap {
       case Some(macAddress) =>
         ZIO.some(macAddress)
       case None =>
@@ -267,9 +261,7 @@ final class LightingLive private(
    */
   private def touch(macAddress: MacAddress): UIO[Unit] = for
     now <- currentTime
-    _ <- devices.modify { map =>
-      () -> map.get(macAddress).fold(map)(old => map + (macAddress -> old.copy(lastSeen = Some(now))))
-    }
+    _ <- devices.modify(devs => () -> devs.touch(macAddress, now))
   yield ()
 
   /**
@@ -294,14 +286,7 @@ final class LightingLive private(
   private def purge: UIO[Unit] = for
     now <- currentTime
     cutoff = now - purgeTimeout.toMillis
-    removedDevices <- devices.modifyZIO { map =>
-      val (surviving, expired) = map.partition { case (_, state) =>
-        state.lastSeen.fold(false)(_ >= cutoff)
-      }
-      ZIO.foreachDiscard(expired.values) { state =>
-        state.inetAddress.fold(ZIO.unit)(index.remove(_, state.macAddress).unit)
-      }.as((expired.values, surviving))
-    }
+    removedDevices <- devices.modify(_.purge(cutoff))
     _ <- ZIO.foreachDiscard(removedDevices) { state =>
       events.publish(Light(state.macAddress, None, None) -> None).ignore
     }
@@ -619,29 +604,7 @@ final class LightingLive private(
     changes: Changes,
     source: Option[Source]
   ): UIO[State] = for
-    (oldState, newState) <- devices.modifyZIO { devices =>
-      val oldState = devices.getOrElse(changes.macAddress, State(changes.macAddress))
-      val newState = oldState.merge(inetAddress, changes)
-      val updateIndex = (oldState.inetAddress, newState.inetAddress) match
-        case (Some(oldInetAddress), Some(newInetAddress)) if oldInetAddress != newInetAddress =>
-          index.remove(oldInetAddress, changes.macAddress) *> index.put(newInetAddress, changes.macAddress)
-        case (Some(oldInetAddress), None) =>
-          index.remove(oldInetAddress, changes.macAddress).unit
-        case (None, Some(newInetAddress)) =>
-          index.put(newInetAddress, changes.macAddress)
-        case _ =>
-          ZIO.unit
-      val updatedDevices = newState.inetAddress match
-        case Some(newIp) =>
-          devices.view.mapValues { dev =>
-            if dev.macAddress != changes.macAddress && dev.inetAddress.contains(newIp) then
-              dev.copy(inetAddress = None)
-            else dev
-          }.toMap.updated(changes.macAddress, newState)
-        case None =>
-          devices.updated(changes.macAddress, newState)
-      updateIndex.as((oldState -> newState, updatedDevices))
-    }
+    (oldState, newState) <- devices.modify(_.applyChanges(inetAddress, changes))
     _ <-
       val newLight = newState.toLight
       if newLight != oldState.toLight then events.publish(newLight -> source).ignore
@@ -712,8 +675,7 @@ object LightingLive:
     network: Network
   ): URIO[Scope, Lighting] = for
     hub <- Hub.unbounded[(Light, Option[Source])]
-    devices <- Ref.Synchronized.make(Map.empty[MacAddress, State])
-    index <- ConcurrentMap.make[InetAddress, MacAddress]()
+    devices <- Ref.Synchronized.make(Devices())
     invocations <- ConcurrentMap.make[Int, Invocation]()
     service = LightingLive(
       Duration.fromScala(registrationTtl),
@@ -723,7 +685,6 @@ object LightingLive:
       network,
       hub,
       devices,
-      index,
       invocations
     )
     _ <- network.subscribe.flatMap(_.mapZIOParUnordered(16)(service.onMessage).runDrain.forkScoped)
