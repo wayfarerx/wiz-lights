@@ -412,7 +412,7 @@ final class LightingLive private(
                             events.publish(newState.toLight -> None).ignore
                           case None =>
                             ZIO.unit
-                        }
+                        } *> invoke(target :: Nil)(GetPilotRequest())
                       else ZIO.unit
                     }
             }
