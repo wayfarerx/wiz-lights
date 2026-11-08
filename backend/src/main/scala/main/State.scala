@@ -63,6 +63,7 @@ private case class State(
   group: Option[Group] = None,
   device: Option[Device] = None,
   registration: Option[Long] = None,
+  registeredIp: Option[InetAddress] = None,
   lastSeen: Option[Long] = None,
   updatedAt: Option[Long] = None,
   authoritativeUntil: Option[Long] = None
@@ -135,6 +136,7 @@ private case class State(
     copy(
       inetAddress = Some(inetAddress),
       registration = Some(registration.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
+      registeredIp = Some(inetAddress),
       lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp)))
     )
 

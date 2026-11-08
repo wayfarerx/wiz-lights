@@ -405,7 +405,11 @@ final class LightingLive private(
     cutoff = now - (registrationTtl.toMillis * 0.8).toLong
     devs <- devices.get
     unregisteredTargets = if force then targets else targets.filter { mac =>
-      devs.get(mac).flatMap(_.registration).fold(true)(_ <= cutoff)
+      devs.get(mac).fold(true) { state =>
+        val expired = state.registration.fold(true)(_ <= cutoff)
+        val ipChanged = state.inetAddress.isDefined && state.registeredIp != state.inetAddress
+        expired || ipChanged
+      }
     }
     _ <- if unregisteredTargets.isEmpty then ZIO.unit else request match
       case Some(req) =>

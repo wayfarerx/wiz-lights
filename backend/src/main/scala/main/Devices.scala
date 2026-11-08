@@ -76,7 +76,7 @@ private case class Devices(
    */
   def unregister(macAddress: MacAddress): Devices =
     byMac.get(macAddress).fold(this) { old =>
-      copy(byMac = byMac.updated(macAddress, old.copy(registration = None)))
+      copy(byMac = byMac.updated(macAddress, old.copy(registration = None, registeredIp = None)))
     }
 
   /**
