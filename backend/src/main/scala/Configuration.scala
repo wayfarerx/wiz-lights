@@ -71,7 +71,7 @@ object Configuration:
   val DefaultPurgeTimeout: FiniteDuration = 3.minutes
 
   /** The default durations to wait between retrying outgoing messages. */
-  val DefaultRetryBackoffs: List[FiniteDuration] = 100.milliseconds :: 150.milliseconds :: 225.milliseconds :: Nil
+  val DefaultRetryBackoffs: List[FiniteDuration] = 200.milliseconds :: 350.milliseconds :: 500.milliseconds :: Nil
 
   /**
    * Creates a new backend configuration.
