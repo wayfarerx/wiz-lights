@@ -335,15 +335,18 @@ final class LightingLive private(
       case None =>
         invocations.remove(invocation.id).ignore
       case Some(target) =>
-        for
-          targets <- lookup(target :: Nil)
-          _ <- if targets.nonEmpty then network.publish(Outgoing.Send(targets.values.toSet, request)) else ZIO.unit
-          _ <- backoffs match
-            case head :: tail =>
-              ZIO.sleep(head) *> retryLoop(invocation, request, tail)
-            case Nil =>
-              ZIO.unit
-        yield ()
+        lookup(target :: Nil).flatMap { targets =>
+          if targets.isEmpty then
+            ZIO.logWarning(s"Unable to resolve IP address for $target.")
+          else
+            network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
+              backoffs match
+                case head :: tail =>
+                  ZIO.sleep(head) *> retryLoop(invocation, request, tail)
+                case Nil =>
+                  ZIO.unit
+            }
+        }
     }
 
   /**
