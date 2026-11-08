@@ -106,14 +106,14 @@ private case class State(
         case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
         case settings: Changes.Settings => mergeSettings(inetAddress, settings)
         case pilot: Changes.Pilot =>
-          if authoritativeUntil.fold(false)(_ > changes.timestamp) && !pilot.source.exists(_ != Source.Udp) then
+          if authoritativeUntil.fold(false)(_ > changes.timestamp) && pilot.source.isEmpty then
             copy(
               inetAddress = Some(inetAddress),
               signal = Some(pilot.signal),
               lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp)))
             )
           else
-            val base = if pilot.source.exists(_ != Source.Udp) then copy(authoritativeUntil = None) else this
+            val base = if pilot.source.isDefined then copy(authoritativeUntil = None) else this
             base.mergePilot(inetAddress, pilot)
         case _: Changes.Registered => this
 
