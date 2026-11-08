@@ -271,16 +271,16 @@ final class LightingLive private(
    *
    * @param id The possible ID of the invocation to complete.
    * @param macAddress The MAC address that completed the invocation.
-   * @return The update associated with the invocation and its creation timestamp, if any.
+   * @return The update associated with the invocation, if any.
    */
-  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[(Update, Long)]] = for
+  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[Update]] = for
     invocation <- id.fold[UIO[Option[Invocation]]](ZIO.none)(invocations.get)
-    result <- invocation.fold[UIO[Option[(Update, Long)]]](ZIO.none) { invocation =>
+    result <- invocation.fold[UIO[Option[Update]]](ZIO.none) { invocation =>
       for
         result <- invocation.complete(macAddress)
         target <- invocation.target
         _ <- if target.isEmpty then invocations.remove(invocation.id) else ZIO.unit
-      yield result.map(_ -> invocation.createdAt)
+      yield result
     }
   yield result
 
@@ -636,14 +636,14 @@ final class LightingLive private(
     payload: SetPilotResponsePayload
   ): UIO[Unit] = for
     macAddress <- resolve(inetAddress, id)
+    now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       for
         update <- completeInvocation(id, macAddress)
-        _ <- update.fold(touch(macAddress)) {
-          case (update, timestamp) =>
-            if payload.success then
-              applyChanges(inetAddress, Changes.Updates(macAddress, timestamp, update), Some(Source.Udp))
-            else touch(macAddress) *> ZIO.logWarning(s"A setPilot request failed: $update.")
+        _ <- update.fold(touch(macAddress)) { update =>
+          if payload.success then
+            applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp))
+          else touch(macAddress) *> ZIO.logWarning(s"A setPilot request failed: $update.")
         }
       yield ()
     }
