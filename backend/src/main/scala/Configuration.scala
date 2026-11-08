@@ -17,6 +17,8 @@
 package net.wayfarerx.wizlights
 package backend
 
+import java.net.InetAddress
+
 import scala.concurrent.duration.*
 
 import zio.{Task, ZIO}
@@ -32,6 +34,7 @@ import zio.{Task, ZIO}
  * @param registrationTtl   The duration after which a bulb registration is refreshed.
  * @param purgeTimeout      The timeout for devices that do not respond.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
+ * @param seeds             The optional seed addresses for discovering lights across subnets.
  */
 case class Configuration private(
   outgoingWindow: Int,
@@ -41,7 +44,8 @@ case class Configuration private(
   discoveryInterval: FiniteDuration,
   registrationTtl: FiniteDuration,
   purgeTimeout: FiniteDuration,
-  retryBackoffs: List[FiniteDuration]
+  retryBackoffs: List[FiniteDuration],
+  seeds: Set[InetAddress] = Set.empty
 )
 
 /**
@@ -84,6 +88,7 @@ object Configuration:
    * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @param registrationTtl   The duration after which a bulb registration is refreshed.
+   * @param seeds             The optional seed addresses for discovering lights across subnets.
    * @return A new backend configuration.
    */
   def make(
@@ -94,7 +99,8 @@ object Configuration:
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
     registrationTtl: FiniteDuration = DefaultRegistrationTtl,
     purgeTimeout: FiniteDuration = DefaultPurgeTimeout,
-    retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs
+    retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs,
+    seeds: Iterable[InetAddress] = Nil
   ): Task[Configuration] =
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
@@ -110,7 +116,8 @@ object Configuration:
         discoveryInterval,
         registrationTtl,
         purgeTimeout,
-        retryBackoffs.toList
+        retryBackoffs.toList,
+        seeds.toSet
       )
     }
 
