@@ -712,7 +712,15 @@ final class LightingLive private(
     error: ErrorResponsePayload
   ): UIO[Unit] = for
     macAddress <- resolve(inetAddress, id)
-    _ <- macAddress.fold(ZIO.unit)(mac => completeInvocation(id, mac) *> touch(mac))
+    _ <- macAddress.fold(ZIO.unit) { mac =>
+      completeInvocation(id, mac) *>
+        touch(mac) *> {
+          if method == SetPilotMethod then
+            devices.modify(devs => () -> devs.clearAuthoritative(mac)) *>
+              invoke(mac :: Nil)(GetPilotRequest())
+          else ZIO.unit
+        }
+    }
     _ <- (error.code, error.message) match
       case (Some(code), Some(message)) => ZIO.logWarning(s"Received $method response error $code: $message")
       case (Some(code), None) => ZIO.logWarning(s"Received $method response error $code.")
