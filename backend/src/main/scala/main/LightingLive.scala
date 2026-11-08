@@ -372,7 +372,12 @@ final class LightingLive private(
                   ZIO.sleep(head) *> retryLoop(invocation, request, tail)
                 case Nil =>
                   invocations.remove(invocation.id).ignore *>
-                    ZIO.logWarning(s"Request timed out for $target: $request.")
+                    ZIO.logWarning(s"Request timed out for $target: $request.") *> {
+                      if invocation.hasUpdate then
+                        devices.modify(devs => () -> devs.clearAuthoritative(target)) *>
+                          invoke(target :: Nil)(GetPilotRequest())
+                      else ZIO.unit
+                    }
             }
         }
     }
@@ -649,7 +654,11 @@ final class LightingLive private(
         _ <- update.fold(touch(macAddress)) { update =>
           if payload.success then
             applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp))
-          else touch(macAddress) *> ZIO.logWarning(s"A setPilot request failed: $update.")
+          else
+            devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *>
+              touch(macAddress) *>
+              ZIO.logWarning(s"A setPilot request failed: $update.") *>
+              invoke(macAddress :: Nil)(GetPilotRequest())
         }
       yield ()
     }

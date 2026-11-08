@@ -80,6 +80,17 @@ private case class Devices(
     }
 
   /**
+   * Clears the authoritative guard for the device with the specified MAC address.
+   *
+   * @param macAddress The MAC address of the device.
+   * @return The updated devices index.
+   */
+  def clearAuthoritative(macAddress: MacAddress): Devices =
+    byMac.get(macAddress).fold(this) { old =>
+      copy(byMac = byMac.updated(macAddress, old.copy(authoritativeUntil = None)))
+    }
+
+  /**
    * Applies changes to a device state.
    *
    * @param inetAddress The internet address of the device.
