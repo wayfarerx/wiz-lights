@@ -694,7 +694,15 @@ final class LightingLive private(
         update <- completeInvocation(id, macAddress)
         _ <- update.fold(touch(macAddress)) { update =>
           if payload.success then
-            applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp))
+            devices.get.flatMap { devs =>
+              devs.get(macAddress) match
+                case Some(dev) if dev.authoritativeUntil.isDefined =>
+                  touch(macAddress)
+                case Some(_) =>
+                  touch(macAddress) *> invoke(macAddress :: Nil)(GetPilotRequest())
+                case None =>
+                  applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp)).unit
+            }
           else
             devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *>
               touch(macAddress) *>
