@@ -65,6 +65,9 @@ final class LightingLive private(
   /** The window within which rapid continuous updates to the same device are coalesced. */
   private val CoalesceWindowMillis: Long = 50L
 
+  /** The duration after which stale invocations are purged. */
+  private val InvocationTimeoutMillis: Long = 30_000L
+
   /** The monotonic time in milliseconds. */
   private val currentTime: UIO[Long] = clock.nanoTime.map(TimeUnit.NANOSECONDS.toMillis)
 
@@ -331,9 +334,10 @@ final class LightingLive private(
       lastDispatched.remove(state.macAddress).ignore *>
         events.publish(Light(state.macAddress, None, None) -> None).ignore
     }
+    invocationCutoff = now - InvocationTimeoutMillis
     activeInvocations <- invocations.toList
     _ <- ZIO.foreachDiscard(activeInvocations) { case (id, invocation) =>
-      if invocation.createdAt < cutoff then invocation.cancel *> invocations.remove(id).ignore else ZIO.unit
+      if invocation.createdAt < invocationCutoff then invocation.cancel *> invocations.remove(id).ignore else ZIO.unit
     }
   yield ()
 
