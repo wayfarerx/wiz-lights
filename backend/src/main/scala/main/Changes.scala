@@ -53,14 +53,16 @@ private object Changes:
   /**
    * Details of an update submitted to the service.
    *
-   * @param macAddress The MAC address of the device.
-   * @param timestamp  The timestamp when the device change was observed.
-   * @param update     The update that was submitted by the service.
+   * @param macAddress          The MAC address of the device.
+   * @param timestamp           The timestamp when the device change was observed.
+   * @param update              The update that was submitted by the service.
+   * @param guardDurationMillis The duration in milliseconds to guard optimistic state.
    */
   case class Updates(
     macAddress: MacAddress,
     timestamp: Long,
-    update: Update
+    update: Update,
+    guardDurationMillis: Long = 2000L
   ) extends Changes
 
   /**

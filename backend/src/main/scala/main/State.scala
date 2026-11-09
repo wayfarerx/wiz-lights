@@ -252,7 +252,7 @@ private case class State(
     newState.copy(
       inetAddress = Some(inetAddress),
       updatedAt = Some(changes.timestamp),
-      authoritativeUntil = Some(changes.timestamp + 2000L)
+      authoritativeUntil = Some(changes.timestamp + changes.guardDurationMillis)
     )
 
   /**

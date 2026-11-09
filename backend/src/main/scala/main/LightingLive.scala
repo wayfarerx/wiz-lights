@@ -74,6 +74,10 @@ final class LightingLive private(
   /** The inter-packet pacing delay for bulk outgoing read requests. */
   private val BurstPacingMillis: Long = 5L
 
+  /** The duration to guard optimistic updates, covering all retries plus headroom. */
+  private val AuthoritativeWindowMillis: Long =
+    retryBackoffs.map(_.toMillis).sum + retryBackoffs.lastOption.map(_.toMillis).getOrElse(500L) + 500L
+
   /** The monotonic time in milliseconds. */
   private val currentTime: UIO[Long] = clock.nanoTime.map(TimeUnit.NANOSECONDS.toMillis)
 
@@ -415,7 +419,7 @@ final class LightingLive private(
     _ <- update.fold(cancelInvocations(targets.toSet, Some(_.method.contains(request.method)))) { upd =>
       cancelInvocations(targets.toSet) *> ZIO.foreachParDiscard(targets) { target =>
         knownIps.get(target).fold(ZIO.unit) { ip =>
-          applyChanges(ip, Changes.Updates(target, now, upd), Some(Source.Udp)).unit
+          applyChanges(ip, Changes.Updates(target, now, upd, AuthoritativeWindowMillis), Some(Source.Udp)).unit
         }
       }
     }
@@ -834,7 +838,7 @@ final class LightingLive private(
                   case Some(_) =>
                     touch(macAddress) *> invoke(macAddress :: Nil)(GetPilotRequest())
                   case None =>
-                    applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp)).unit
+                    applyChanges(inetAddress, Changes.Updates(macAddress, now, update, AuthoritativeWindowMillis), Some(Source.Udp)).unit
               }
             else
               devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *>
