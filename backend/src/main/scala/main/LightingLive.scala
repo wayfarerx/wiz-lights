@@ -631,6 +631,8 @@ final class LightingLive private(
       payload.fold(onErrorResponse(RegistrationMethod, message.address, id, _), onRegistration(message.address, id, _))
     case SetPilotResponse(payload, id) =>
       payload.fold(onErrorResponse(SetPilotMethod, message.address, id, _), onSetPilot(message.address, id, _))
+    case ErrorResponse(error, id, method) =>
+      onErrorResponse(method.getOrElse("unknown"), message.address, id, error)
 
   /**
    * Called when the service receives a first beat response.

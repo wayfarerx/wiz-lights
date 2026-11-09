@@ -259,6 +259,70 @@ object ResponseSpec extends ZIOSpecDefault:
           case _ => false
       )
     },
+    test("decode ErrorResponse when method is omitted") {
+      val jsonString =
+        """{
+          |  "id": 42,
+          |  "error": {
+          |    "code": -32600,
+          |    "message": "Invalid Request"
+          |  }
+          |}""".stripMargin
+
+      val decodedResponse = decodeJson[Response](jsonString)
+      val decodedSpecific = decodeJson[ErrorResponse](jsonString)
+      assertTrue(
+        decodedResponse.isRight,
+        decodedSpecific.isRight,
+        decodedResponse == decodedSpecific,
+        decodedResponse.toOption.get match
+          case ErrorResponse(error, id, method) =>
+            id.contains(42) &&
+              method.isEmpty &&
+              error.code.contains(-32600) &&
+              error.message.contains("Invalid Request")
+          case _ => false
+      )
+    },
+    test("decode ErrorResponse when method is unsupported but error is present") {
+      val jsonString =
+        """{
+          |  "id": 42,
+          |  "method": "unknownMethod",
+          |  "error": {
+          |    "code": -32601,
+          |    "message": "Method not found"
+          |  }
+          |}""".stripMargin
+
+      val decodedResponse = decodeJson[Response](jsonString)
+      val decodedSpecific = decodeJson[ErrorResponse](jsonString)
+      assertTrue(
+        decodedResponse.isRight,
+        decodedSpecific.isRight,
+        decodedResponse == decodedSpecific,
+        decodedResponse.toOption.get match
+          case ErrorResponse(error, id, method) =>
+            id.contains(42) &&
+              method.contains("unknownMethod") &&
+              error.code.contains(-32601) &&
+              error.message.contains("Method not found")
+          case _ => false
+      )
+    },
+    test("fail when method and error are both missing") {
+      val jsonString =
+        """{
+          |  "id": 42
+          |}""".stripMargin
+
+      val decodedResponse = decodeJson[Response](jsonString)
+      assertTrue(
+        decodedResponse.isLeft,
+        decodedResponse.left.toOption.get.isInstanceOf[DecodingFailure],
+        decodedResponse.left.toOption.get.getMessage.contains("Missing required \"method\" key.")
+      )
+    },
     test("fail when method is not supported") {
       val jsonString =
         """{

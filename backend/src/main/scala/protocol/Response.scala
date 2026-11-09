@@ -42,20 +42,26 @@ object Response:
 
   /** General purpose response decoder. */
   given Decoder[Response] = Decoder.instance { cursor =>
-    for
-      method <- cursor.downField(MethodKey).as[String]
-      decoder <- method match
-        case FirstBeatMethod => Right(Decoder[FirstBeatResponse])
-        case GetPilotMethod => Right(Decoder[GetPilotResponse])
-        case GetSystemConfigMethod => Right(Decoder[GetSystemConfigResponse])
-        case RegistrationMethod => Right(Decoder[RegistrationResponse])
-        case SetPilotMethod => Right(Decoder[SetPilotResponse])
-        case SyncPilotMethod => Right(Decoder[SyncPilotResponse])
-        case invalid => Left(DecodingFailure(DecodingFailure.Reason.CustomReason(
-          s"""The value "$invalid" is not supported as a value for the "$MethodKey" key."""
+    cursor.downField(MethodKey).as[String] match
+      case Right(method) =>
+        val decoder = method match
+          case FirstBeatMethod => Right(Decoder[FirstBeatResponse])
+          case GetPilotMethod => Right(Decoder[GetPilotResponse])
+          case GetSystemConfigMethod => Right(Decoder[GetSystemConfigResponse])
+          case RegistrationMethod => Right(Decoder[RegistrationResponse])
+          case SetPilotMethod => Right(Decoder[SetPilotResponse])
+          case SyncPilotMethod => Right(Decoder[SyncPilotResponse])
+          case invalid =>
+            if cursor.downField(ErrorKey).succeeded then Right(Decoder[ErrorResponse])
+            else Left(DecodingFailure(DecodingFailure.Reason.CustomReason(
+              s"""The value "$invalid" is not supported as a value for the "$MethodKey" key."""
+            ), cursor))
+        decoder.flatMap(_(cursor))
+      case Left(_) =>
+        if cursor.downField(ErrorKey).succeeded then Decoder[ErrorResponse].apply(cursor)
+        else Left(DecodingFailure(DecodingFailure.Reason.CustomReason(
+          s"""Missing required "$MethodKey" key."""
         ), cursor))
-      result <- decoder(cursor)
-    yield result
   }
 
   /**
@@ -221,6 +227,37 @@ object SyncPilotResponse:
 
   /** The sync pilot response decoder. */
   given Decoder[SyncPilotResponse] = Response.payloadDecoder(ParamsKey, SyncPilotResponse.apply)
+
+/**
+ * A generic error response, used when the method is omitted or unsupported.
+ *
+ * @param error  The error payload.
+ * @param id     The optional correlation ID.
+ * @param method The optional method if present in the error envelope.
+ */
+case class ErrorResponse(
+  error: ErrorResponsePayload,
+  id: Option[Int] = None,
+  method: Option[String] = None
+) extends Response:
+
+  /* The type of success payload this response carries. */
+  override type Payload = Nothing
+
+  /* The payload of this response as Either. */
+  override def payload: Either[ErrorResponsePayload, Nothing] = Left(error)
+
+/**
+ * Definitions associated with error responses.
+ */
+object ErrorResponse:
+
+  /** The error response decoder. */
+  given Decoder[ErrorResponse] = Decoder.instance { cursor =>
+    val id = cursor.downField(IdKey).as[Int].toOption
+    val method = cursor.downField(MethodKey).as[String].toOption
+    cursor.downField(ErrorKey).as[ErrorResponsePayload].map(ErrorResponse(_, id, method))
+  }
 
 /**
  * The first beat response payload.
