@@ -246,7 +246,6 @@ private case class State(
             )
     newState.copy(
       inetAddress = Some(inetAddress),
-      lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
       updatedAt = Some(changes.timestamp),
       authoritativeUntil = Some(changes.timestamp + 2000L)
     )
