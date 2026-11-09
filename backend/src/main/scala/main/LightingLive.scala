@@ -301,12 +301,17 @@ final class LightingLive private(
   /**
    * Completes an invocation from a MAC address.
    *
-   * @param id The possible ID of the invocation to complete.
-   * @param macAddress The MAC address that completed the invocation.
+   * @param id          The possible ID of the invocation to complete.
+   * @param macAddress  The MAC address that completed the invocation.
+   * @param defaultTime The default timestamp if no invocation ID was present.
    * @return None if an ID was specified but no active matching invocation was found,
-   *         or Some(update) where update is the optional update associated with the invocation.
+   *         or Some(update -> timestamp) where update is the optional update associated with the invocation.
    */
-  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[Option[Update]]] =
+  private def completeInvocation(
+    id: Option[Int],
+    macAddress: MacAddress,
+    defaultTime: Long
+  ): UIO[Option[(Option[Update], Long)]] =
     id match
       case Some(invocationId) =>
         invocations.get(invocationId).flatMap {
@@ -315,12 +320,12 @@ final class LightingLive private(
               result <- invocation.complete(macAddress)
               target <- invocation.target
               _ <- if target.isEmpty then invocations.remove(invocation.id) else ZIO.unit
-            yield result
+            yield result.map(_ -> invocation.createdAt)
           case None =>
             ZIO.none
         }
       case None =>
-        ZIO.some(None)
+        ZIO.some(Option.empty[Update] -> defaultTime)
 
   /**
    * Performs periodic discovery, unicast health probing, and inactive device disconnection.
@@ -655,27 +660,32 @@ final class LightingLive private(
     payload: GetSystemConfigResponsePayload
   ): UIO[Unit] = for
     now <- currentTime
-    changes <- Changes.Settings.make(
-      payload.mac,
-      now,
-      payload.homeId,
-      payload.roomId,
-      payload.moduleName,
-      payload.fwVersion,
-      payload.groupId,
-      payload.typeId
-    ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get system config changes.", _).map(_ => None))
-    _ <- changes.fold(ZIO.unit) { changes =>
-      val macAddresses = changes.macAddress :: Nil
-      completeInvocation(id, changes.macAddress).flatMap {
-        case Some(_) =>
+    macAddress <- resolve(inetAddress, id).map(_.orElse(MacAddress.from(payload.mac).toOption))
+    _ <- macAddress.fold(ZIO.unit) { mac =>
+      completeInvocation(id, mac, now).flatMap {
+        case Some((_, timestamp)) =>
           for
-            newDevice <- applyChanges(inetAddress, changes, None)
-            _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
-            _ <- registerWith(macAddresses)
+            changes <- Changes.Settings.make(
+              payload.mac,
+              timestamp,
+              payload.homeId,
+              payload.roomId,
+              payload.moduleName,
+              payload.fwVersion,
+              payload.groupId,
+              payload.typeId
+            ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get system config changes.", _).map(_ => None))
+            _ <- changes.fold(ZIO.unit) { changes =>
+              val macAddresses = changes.macAddress :: Nil
+              for
+                newDevice <- applyChanges(inetAddress, changes, None)
+                _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
+                _ <- registerWith(macAddresses)
+              yield ()
+            }
           yield ()
         case None =>
-          touch(changes.macAddress)
+          touch(mac)
       }
     }
   yield ()
@@ -693,32 +703,37 @@ final class LightingLive private(
     payload: GetPilotResponsePayload
   ): UIO[Unit] = for
     now <- currentTime
-    changes <- Changes.Pilot.make(
-      payload.mac,
-      now,
-      payload.rssi,
-      payload.state,
-      payload.dimming,
-      payload.sceneId,
-      payload.speed,
-      payload.temp,
-      payload.r,
-      payload.g,
-      payload.b,
-      payload.c,
-      payload.w
-    ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get pilot changes.", _).map(_ => None))
-    _ <- changes.fold(ZIO.unit) { changes =>
-      val macAddresses = changes.macAddress :: Nil
-      completeInvocation(id, changes.macAddress).flatMap {
-        case Some(_) =>
+    macAddress <- resolve(inetAddress, id).map(_.orElse(MacAddress.from(payload.mac).toOption))
+    _ <- macAddress.fold(ZIO.unit) { mac =>
+      completeInvocation(id, mac, now).flatMap {
+        case Some((_, timestamp)) =>
           for
-            newDevice <- applyChanges(inetAddress, changes, None)
-            _ <- if shouldRefreshSettings(newDevice, now) then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
-            _ <- registerWith(macAddresses)
+            changes <- Changes.Pilot.make(
+              payload.mac,
+              timestamp,
+              payload.rssi,
+              payload.state,
+              payload.dimming,
+              payload.sceneId,
+              payload.speed,
+              payload.temp,
+              payload.r,
+              payload.g,
+              payload.b,
+              payload.c,
+              payload.w
+            ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get pilot changes.", _).map(_ => None))
+            _ <- changes.fold(ZIO.unit) { changes =>
+              val macAddresses = changes.macAddress :: Nil
+              for
+                newDevice <- applyChanges(inetAddress, changes, None)
+                _ <- if shouldRefreshSettings(newDevice, now) then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+                _ <- registerWith(macAddresses)
+              yield ()
+            }
           yield ()
         case None =>
-          touch(changes.macAddress)
+          touch(mac)
       }
     }
   yield ()
@@ -778,9 +793,9 @@ final class LightingLive private(
     macAddress <- resolve(inetAddress, id)
     now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      completeInvocation(id, macAddress).flatMap {
-        case Some(_) =>
-          if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, now), None)
+      completeInvocation(id, macAddress, now).flatMap {
+        case Some((_, timestamp)) =>
+          if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, timestamp), None)
           else touch(macAddress) *> ZIO.logWarning(s"A registration request failed for $macAddress.")
         case None =>
           touch(macAddress)
@@ -804,9 +819,9 @@ final class LightingLive private(
     now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       for
-        completed <- completeInvocation(id, macAddress)
+        completed <- completeInvocation(id, macAddress, now)
         _ <- completed match
-          case Some(Some(update)) =>
+          case Some((Some(update), _)) =>
             if payload.success then
               devices.get.flatMap { devs =>
                 devs.get(macAddress) match
@@ -824,7 +839,7 @@ final class LightingLive private(
                 touch(macAddress) *>
                 ZIO.logWarning(s"A setPilot request failed: $update.") *>
                 invoke(macAddress :: Nil)(GetPilotRequest())
-          case Some(None) | None =>
+          case Some((None, _)) | None =>
             touch(macAddress)
       yield ()
     }
@@ -864,9 +879,10 @@ final class LightingLive private(
     id: Option[Int],
     error: ErrorResponsePayload
   ): UIO[Unit] = for
+    now <- currentTime
     macAddress <- resolve(inetAddress, id)
     _ <- macAddress.fold(ZIO.unit) { mac =>
-      completeInvocation(id, mac) *>
+      completeInvocation(id, mac, now) *>
         touch(mac) *> {
           if method == SetPilotMethod then
             devices.modify(devs => () -> devs.clearAuthoritative(mac)) *>
