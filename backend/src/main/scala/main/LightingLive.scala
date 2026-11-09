@@ -335,11 +335,12 @@ final class LightingLive private(
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
     devs <- devices.get
     probeCutoff = now - discoveryInterval.toMillis
-    silentIps = devs.values.collect {
+    silentMacs = devs.values.collect {
       case state if state.inetAddress.isDefined && state.lastSeen.fold(true)(_ <= probeCutoff) =>
-        state.inetAddress.get
-    }.toSet ++ seeds
-    _ <- if silentIps.nonEmpty then network.publish(Outgoing.Send(silentIps, GetPilotRequest())) else ZIO.unit
+        state.macAddress
+    }.toList
+    _ <- if silentMacs.nonEmpty then invoke(silentMacs)(GetPilotRequest()) else ZIO.unit
+    _ <- if seeds.nonEmpty then network.publish(Outgoing.Send(seeds, GetPilotRequest())) else ZIO.unit
     inactiveCutoff = now - (discoveryInterval.toMillis * 2.5).toLong
     disconnectedDevices <- devices.modify(_.disconnectInactive(inactiveCutoff))
     _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
