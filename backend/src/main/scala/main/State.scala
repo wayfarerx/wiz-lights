@@ -299,6 +299,15 @@ private case class State(
                   (None, None, Some(temp), None)
                 case None =>
                   changes.color match
+                    case Some(clr) if clr.cool > 0 || clr.warm > 0 =>
+                      val derivedTemp =
+                        if clr.cool > 0 && clr.warm == 0 then Temperature.Coolest
+                        else if clr.warm > 0 && clr.cool == 0 then Temperature.Warmest
+                        else
+                          val total = clr.cool + clr.warm
+                          val kelvin = Temperature.Warmest + ((clr.cool.toDouble / total) * (Temperature.Coolest - Temperature.Warmest)).toInt
+                          Temperature.from(kelvin).getOrElse(Temperature.Medium)
+                      (None, None, Some(derivedTemp), None)
                     case Some(clr) =>
                       (None, None, None, Some(clr))
                     case None =>
