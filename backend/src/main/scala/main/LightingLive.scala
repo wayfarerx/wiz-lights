@@ -584,7 +584,7 @@ final class LightingLive private(
         newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
         _ <- registerWith(macAddresses, force = true)
         _ <- invoke(macAddresses)(GetPilotRequest())
-        _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
       yield ()
     }
   yield ()
@@ -656,7 +656,7 @@ final class LightingLive private(
       for
         _ <- completeInvocation(id, changes.macAddress)
         newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
@@ -694,7 +694,7 @@ final class LightingLive private(
       for
         _ <- if changes.source.exists(s => s != Source.Udp) then cancelInvocations(macAddresses.toSet) else ZIO.unit
         newDevice <- applyChanges(inetAddress, changes, changes.source)
-        _ <- if newDevice.module.isEmpty || newDevice.firmware.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
