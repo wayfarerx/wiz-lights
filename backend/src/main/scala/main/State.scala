@@ -44,6 +44,7 @@ import service.*
  * @param registration       The timestamp when the light was registered if ever.
  * @param lastSeen           The timestamp when the light was last seen if ever.
  * @param updatedAt          The timestamp when the light state was last updated if ever.
+ * @param settingsUpdatedAt  The timestamp when the light settings were last updated if ever.
  * @param authoritativeUntil The timestamp until which optimistic updates are guarded.
  */
 private case class State(
@@ -66,6 +67,7 @@ private case class State(
   registeredIp: Option[InetAddress] = None,
   lastSeen: Option[Long] = None,
   updatedAt: Option[Long] = None,
+  settingsUpdatedAt: Option[Long] = None,
   authoritativeUntil: Option[Long] = None
 ):
 
@@ -100,12 +102,15 @@ private case class State(
    */
   def merge(inetAddress: InetAddress, changes: Changes): State = changes match
     case registered: Changes.Registered => mergeRegistered(inetAddress, registered)
+    case settings: Changes.Settings =>
+      if settingsUpdatedAt.fold(false)(_ > settings.timestamp) then
+        copy(lastSeen = Some(lastSeen.fold(settings.timestamp)(Math.max(_, settings.timestamp))))
+      else mergeSettings(inetAddress, settings)
     case other =>
       if updatedAt.fold(false)(_ > other.timestamp) then
         copy(lastSeen = Some(lastSeen.fold(other.timestamp)(Math.max(_, other.timestamp))))
       else other match
         case updates: Changes.Updates => mergeUpdates(inetAddress, updates)
-        case settings: Changes.Settings => mergeSettings(inetAddress, settings)
         case pilot: Changes.Pilot =>
           val isGuardedSource = pilot.source.fold(true) {
             case Source.Heartbeat => true
@@ -123,7 +128,7 @@ private case class State(
               copy(authoritativeUntil = None)
             else this
             base.mergePilot(inetAddress, pilot)
-        case _: Changes.Registered => this
+        case _: Changes.Registered | _: Changes.Settings => this
 
   /**
    * Merges a registration change into this device.
@@ -266,7 +271,7 @@ private case class State(
     group = changes.group.getOrElse(group),
     device = changes.device.orElse(device),
     lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
-    updatedAt = Some(changes.timestamp)
+    settingsUpdatedAt = Some(changes.timestamp)
   )
 
   /**
