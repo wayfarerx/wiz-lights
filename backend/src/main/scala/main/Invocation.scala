@@ -38,7 +38,8 @@ private final class Invocation private(
   val createdAt: Long,
   targetRef: Ref[Option[MacAddress]],
   fiberRef: Ref[Option[Fiber[Nothing, Unit]]],
-  update: Option[Update]
+  update: Option[Update],
+  val method: Option[String] = None
 ):
 
   /** Returns the address of the device that this invocation targets. */
@@ -106,13 +107,19 @@ private object Invocation:
    * @param target The MAC address of the device that is being invoked.
    * @param now    The current time.
    * @param update The optional update associated with the invocation.
+   * @param method The optional request method associated with the invocation.
    * @return A new invocation.
    */
-  def make(target: MacAddress, now: Long, update: Option[Update] = None): UIO[Invocation] = for
+  def make(
+    target: MacAddress,
+    now: Long,
+    update: Option[Update] = None,
+    method: Option[String] = None
+  ): UIO[Invocation] = for
     id <- nextId
     targetRef <- Ref.make[Option[MacAddress]](Some(target))
     fiberRef <- Ref.make[Option[Fiber[Nothing, Unit]]](None)
-  yield Invocation(id, now, targetRef, fiberRef, update)
+  yield Invocation(id, now, targetRef, fiberRef, update, method)
 
   /** Generates the next available invocation ID. */
   private def nextId: UIO[Int] =
