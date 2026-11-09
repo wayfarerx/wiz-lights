@@ -453,14 +453,16 @@ final class LightingLive private(
   /**
    * Retries sending a request to devices that have not yet responded.
    *
-   * @param invocation The invocation being managed.
-   * @param request    The request to send.
-   * @param backoffs   The remaining backoff durations.
+   * @param invocation  The invocation being managed.
+   * @param request     The request to send.
+   * @param backoffs    The remaining backoff durations.
+   * @param lastBackoff The duration of the most recent backoff sleep.
    */
   private def retryLoop(
     invocation: Invocation,
     request: Request,
-    backoffs: List[Duration]
+    backoffs: List[Duration],
+    lastBackoff: Duration = retryBackoffs.lastOption.getOrElse(Duration.fromMillis(500))
   ): UIO[Unit] =
     invocation.target.flatMap {
       case None =>
@@ -473,14 +475,20 @@ final class LightingLive private(
             network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
               backoffs match
                 case head :: tail =>
-                  ZIO.sleep(head) *> retryLoop(invocation, request, tail)
+                  ZIO.sleep(head) *> retryLoop(invocation, request, tail, head)
                 case Nil =>
-                  invocations.remove(invocation.id).ignore *>
-                    ZIO.logWarning(s"Request timed out for $target: $request.") *> {
-                      if invocation.hasUpdate then
-                        devices.modify(devs => () -> devs.clearAuthoritative(target)) *>
-                          invoke(target :: Nil)(GetPilotRequest())
-                      else ZIO.unit
+                  ZIO.sleep(lastBackoff) *>
+                    invocation.target.flatMap {
+                      case None =>
+                        invocations.remove(invocation.id).ignore
+                      case Some(target) =>
+                        invocations.remove(invocation.id).ignore *>
+                          ZIO.logWarning(s"Request timed out for $target: $request.") *> {
+                            if invocation.hasUpdate then
+                              devices.modify(devs => () -> devs.clearAuthoritative(target)) *>
+                                invoke(target :: Nil)(GetPilotRequest())
+                            else ZIO.unit
+                          }
                     }
             }
         }
