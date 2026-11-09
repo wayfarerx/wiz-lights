@@ -881,7 +881,7 @@ object LightingLive:
         configuration.registrationTtl,
         configuration.purgeTimeout,
         configuration.retryBackoffs,
-        configuration.seeds,
+        configuration.devices,
         clock,
         network
       )

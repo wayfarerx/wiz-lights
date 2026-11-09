@@ -34,7 +34,7 @@ import zio.{Task, ZIO}
  * @param registrationTtl   The duration after which a bulb registration is refreshed.
  * @param purgeTimeout      The timeout for devices that do not respond.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
- * @param seeds             The optional seed addresses for discovering lights across subnets.
+ * @param devices           The optional device addresses for discovering lights across subnets.
  */
 case class Configuration private(
   outgoingWindow: Int,
@@ -45,7 +45,7 @@ case class Configuration private(
   registrationTtl: FiniteDuration,
   purgeTimeout: FiniteDuration,
   retryBackoffs: List[FiniteDuration],
-  seeds: Set[InetAddress] = Set.empty
+  devices: Set[InetAddress] = Set.empty
 )
 
 /**
@@ -88,7 +88,7 @@ object Configuration:
    * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @param registrationTtl   The duration after which a bulb registration is refreshed.
-   * @param seeds             The optional seed addresses for discovering lights across subnets.
+   * @param devices           The optional device addresses for discovering lights across subnets.
    * @return A new backend configuration.
    */
   def make(
@@ -100,7 +100,7 @@ object Configuration:
     registrationTtl: FiniteDuration = DefaultRegistrationTtl,
     purgeTimeout: FiniteDuration = DefaultPurgeTimeout,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs,
-    seeds: Iterable[InetAddress] = Nil
+    devices: Iterable[InetAddress] = Nil
   ): Task[Configuration] =
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
@@ -117,7 +117,7 @@ object Configuration:
         registrationTtl,
         purgeTimeout,
         retryBackoffs.toList,
-        seeds.toSet
+        devices.toSet
       )
     }
 
