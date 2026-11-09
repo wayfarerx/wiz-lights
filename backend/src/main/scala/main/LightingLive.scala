@@ -786,8 +786,8 @@ final class LightingLive private(
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       for
         completed <- completeInvocation(id, macAddress, now)
-        _ <- completed match
-          case Some((Some(update), _)) =>
+        _ <- completed.flatMap(_._1) match
+          case Some(update) =>
             if payload.success then
               devices.get.flatMap { devs =>
                 devs.get(macAddress) match
@@ -805,7 +805,7 @@ final class LightingLive private(
                 touch(macAddress) *>
                 ZIO.logWarning(s"A setPilot request failed: $update.") *>
                 invoke(macAddress :: Nil)(GetPilotRequest())
-          case Some((None, _)) | None =>
+          case None =>
             touch(macAddress)
       yield ()
     }
