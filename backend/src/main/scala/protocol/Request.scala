@@ -18,6 +18,8 @@ package net.wayfarerx.wizlights
 package backend
 package protocol
 
+import java.net.InetAddress
+
 import io.circe.{Encoder, Json, JsonObject}
 import io.circe.generic.semiauto.deriveEncoder
 
@@ -157,6 +159,72 @@ object RegistrationRequest:
 
   /** The registration request encoder. */
   given encoder: Encoder[RegistrationRequest] = Request.encoding(RegistrationMethod, deriveEncoder)
+
+  /**
+   * Creates a registration request using an internet address.
+   *
+   * @param phoneMac The MAC address of the device registering for updates.
+   * @param phoneIp  The internet address of the device registering for updates.
+   * @return A registration request.
+   */
+  def apply(phoneMac: String, phoneIp: InetAddress): RegistrationRequest =
+    RegistrationRequest(phoneMac, phoneIp.getHostAddress, true, None)
+
+  /**
+   * Creates a registration request using an internet address.
+   *
+   * @param phoneMac The MAC address of the device registering for updates.
+   * @param phoneIp  The internet address of the device registering for updates.
+   * @param register True to register for updates, false to deregister.
+   * @return A registration request.
+   */
+  def apply(phoneMac: String, phoneIp: InetAddress, register: Boolean): RegistrationRequest =
+    RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, None)
+
+  /**
+   * Creates a registration request using an internet address.
+   *
+   * @param phoneMac The MAC address of the device registering for updates.
+   * @param phoneIp  The internet address of the device registering for updates.
+   * @param register True to register for updates, false to deregister.
+   * @param id       The optional correlation ID.
+   * @return A registration request.
+   */
+  def apply(phoneMac: String, phoneIp: InetAddress, register: Boolean, id: Option[Int]): RegistrationRequest =
+    RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, id)
+
+  /**
+   * Creates a registration request using an internet address.
+   *
+   * @param phoneMac The MAC address of the device registering for updates.
+   * @param phoneIp  The internet address of the device registering for updates.
+   * @return A registration request.
+   */
+  def from(phoneMac: String, phoneIp: InetAddress): RegistrationRequest =
+    RegistrationRequest(phoneMac, phoneIp.getHostAddress, true, None)
+
+  /**
+   * Creates a registration request using an internet address.
+   *
+   * @param phoneMac The MAC address of the device registering for updates.
+   * @param phoneIp  The internet address of the device registering for updates.
+   * @param register True to register for updates, false to deregister.
+   * @return A registration request.
+   */
+  def from(phoneMac: String, phoneIp: InetAddress, register: Boolean): RegistrationRequest =
+    RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, None)
+
+  /**
+   * Creates a registration request using an internet address.
+   *
+   * @param phoneMac The MAC address of the device registering for updates.
+   * @param phoneIp  The internet address of the device registering for updates.
+   * @param register True to register for updates, false to deregister.
+   * @param id       The optional correlation ID.
+   * @return A registration request.
+   */
+  def from(phoneMac: String, phoneIp: InetAddress, register: Boolean, id: Option[Int]): RegistrationRequest =
+    RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, id)
 
 /**
  * The set pilot request.

@@ -122,6 +122,21 @@ object RequestSpec extends ZIOSpecDefault:
         (registrationRequestWithId: Request).asJson == expectedRegistrationWithIdJson
       )
     },
+    test("construct RegistrationRequest with domain types and InetAddress") {
+      val mac = MacAddress.from("0123456789ab").toOption.get
+      val ip = IpAddress.from("192.168.1.100").toOption.get
+      val inet = java.net.InetAddress.getByName("192.168.1.100")
+
+      assertTrue(
+        RegistrationRequest(mac, ip) == RegistrationRequest("0123456789ab", "192.168.1.100"),
+        RegistrationRequest(mac, inet) == RegistrationRequest("0123456789ab", "192.168.1.100"),
+        RegistrationRequest(mac, inet, false) == RegistrationRequest("0123456789ab", "192.168.1.100", false),
+        RegistrationRequest(mac, inet, true, Some(42)) == RegistrationRequest("0123456789ab", "192.168.1.100", true, Some(42)),
+        RegistrationRequest.from(mac, inet) == RegistrationRequest("0123456789ab", "192.168.1.100"),
+        RegistrationRequest.from(mac, inet, false) == RegistrationRequest("0123456789ab", "192.168.1.100", false),
+        RegistrationRequest.from(mac, inet, true, Some(42)) == RegistrationRequest("0123456789ab", "192.168.1.100", true, Some(42))
+      )
+    },
     test("encode SetPilotRequest to JSON with partial parameters") {
       val stateOnlyRequest = SetPilotRequest(state = Some(true))
       val expectedStateOnlyJson = Json.obj(
