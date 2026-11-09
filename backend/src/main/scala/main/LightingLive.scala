@@ -513,6 +513,11 @@ final class LightingLive private(
                             if invocation.hasUpdate then
                               devices.modify(devs => () -> devs.clearAuthoritative(target)) *>
                                 invoke(target :: Nil)(GetPilotRequest())
+                            else if request.method == GetPilotMethod then
+                              devices.modify(_.disconnect(target)).flatMap {
+                                case Some(disconnected) => events.publish(disconnected.toLight -> None).unit
+                                case None => ZIO.unit
+                              }
                             else ZIO.unit
                           }
                     }
