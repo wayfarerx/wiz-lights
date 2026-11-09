@@ -881,7 +881,7 @@ object LightingLive:
         .forkScoped
     }
     _ <- network.interfacesChanged.flatMap { stream =>
-      stream.mapZIO(_ => service.forceRegister).runDrain
+      stream.mapZIO(_ => service.forceRegister *> service.discover).runDrain
     }.forkScoped
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
     _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
