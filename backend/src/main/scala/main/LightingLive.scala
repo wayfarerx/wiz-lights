@@ -71,6 +71,9 @@ final class LightingLive private(
   /** The threshold after which device settings metadata is refreshed (one hour). */
   private val SettingsRefreshThresholdMillis: Long = 3_600_000L
 
+  /** The inter-packet pacing delay for bulk outgoing read requests. */
+  private val BurstPacingMillis: Long = 5L
+
   /** The monotonic time in milliseconds. */
   private val currentTime: UIO[Long] = clock.nanoTime.map(TimeUnit.NANOSECONDS.toMillis)
 
@@ -410,14 +413,25 @@ final class LightingLive private(
         }
       }
     }
-    _ <- ZIO.foreachParDiscard(targets) { target =>
-      for
-        invocation <- Invocation.make(target, now, update, Some(request.method))
-        _ <- invocations.put(invocation.id, invocation)
-        fiber <- dispatchLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
-        _ <- invocation.bind(fiber)
-      yield ()
-    }
+    _ <- if update.isEmpty && targets.size > 1 then
+      ZIO.foreachDiscard(targets.zipWithIndex) { case (target, index) =>
+        for
+          invocation <- Invocation.make(target, now, update, Some(request.method))
+          _ <- invocations.put(invocation.id, invocation)
+          delay = if index > 0 then ZIO.sleep(Duration.fromMillis(BurstPacingMillis * index)) else ZIO.unit
+          fiber <- (delay *> dispatchLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs)).fork
+          _ <- invocation.bind(fiber)
+        yield ()
+      }
+    else
+      ZIO.foreachParDiscard(targets) { target =>
+        for
+          invocation <- Invocation.make(target, now, update, Some(request.method))
+          _ <- invocations.put(invocation.id, invocation)
+          fiber <- dispatchLoop(invocation, request.withId(Some(invocation.id)), retryBackoffs).fork
+          _ <- invocation.bind(fiber)
+        yield ()
+      }
   yield ()
 
   /**
