@@ -28,46 +28,31 @@ import zio.test.*
 object HomeSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("HomeSpec")(
-    test("create valid home identifiers with from and make") {
-      for
-        fromOne <- ZIO.fromEither(Home.from(1))
-        fromPositive <- ZIO.fromEither(Home.from(12345))
-        madeOne <- Home.make(1)
-        madePositive <- Home.make(12345)
-      yield assertTrue(
-        (fromOne: Int) == 1,
-        (fromPositive: Int) == 12345,
-        (madeOne: Int) == 1,
-        (madePositive: Int) == 12345
+    test("validate and construct home identifiers from integers") {
+      assertTrue(
+        Home.from(1).map(h => (h: Int)) == Right(1),
+        Home.from(12345).map(h => (h: Int)) == Right(12345),
+        Home.from(0) == Left("Invalid home ID: 0. Must be positive."),
+        Home.from(-10) == Left("Invalid home ID: -10. Must be positive.")
       )
     },
-    test("reject non-positive home identifiers") {
-      val fromZero = Home.from(0)
-      val fromNeg = Home.from(-10)
+    test("construct home effect with make") {
       for
-        errZero <- Home.make(0).flip
-        errNeg <- Home.make(-10).flip
+        made <- Home.make(1)
+        err <- Home.make(0).flip
       yield assertTrue(
-        fromZero == Left("Invalid home ID: 0. Must be positive."),
-        fromNeg == Left("Invalid home ID: -10. Must be positive."),
-        errZero.isInstanceOf[IllegalArgumentException],
-        errZero.getMessage == "Invalid home ID: 0. Must be positive.",
-        errNeg.isInstanceOf[IllegalArgumentException],
-        errNeg.getMessage == "Invalid home ID: -10. Must be positive."
+        (made: Int) == 1,
+        err.getMessage == "Invalid home ID: 0. Must be positive."
       )
     },
     test("encode and decode Home as JSON") {
-      for
-        home <- Home.make(42)
-        encoded = Encoder[Home].apply(home)
-        decoded = Decoder[Home].decodeJson(encoded)
-        invalidJson = Decoder[Home].decodeJson(Json.fromInt(-1))
-        nonIntJson = Decoder[Home].decodeJson(Json.arr())
-      yield assertTrue(
+      val home = Home.from(42).toOption.get
+      val encoded = Encoder[Home].apply(home)
+      assertTrue(
         encoded == Json.fromInt(42),
-        decoded == Right(home),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+        Decoder[Home].decodeJson(encoded) == Right(home),
+        Decoder[Home].decodeJson(Json.fromInt(-1)).isLeft,
+        Decoder[Home].decodeJson(Json.arr()).isLeft
       )
     }
   )

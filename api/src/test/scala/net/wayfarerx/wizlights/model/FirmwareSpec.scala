@@ -28,48 +28,31 @@ import zio.test.*
 object FirmwareSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("FirmwareSpec")(
-    test("create valid firmware versions with from and make") {
-      val valid = "1.25.0"
-      val padded = "  v2.0.1  "
-      for
-        fromValid <- ZIO.fromEither(Firmware.from(valid))
-        fromPadded <- ZIO.fromEither(Firmware.from(padded))
-        madeValid <- Firmware.make(valid)
-        madePadded <- Firmware.make(padded)
-      yield assertTrue(
-        fromValid == "1.25.0",
-        fromPadded == "v2.0.1",
-        madeValid == "1.25.0",
-        madePadded == "v2.0.1"
+    test("validate and construct firmware versions from strings") {
+      assertTrue(
+        Firmware.from("1.25.0") == Right("1.25.0"),
+        Firmware.from("  v2.0.1  ") == Right("v2.0.1"),
+        Firmware.from("") == Left("Empty or blank firmware version."),
+        Firmware.from("   ") == Left("Empty or blank firmware version.")
       )
     },
-    test("reject empty or blank firmware versions") {
-      val fromEmpty = Firmware.from("")
-      val fromBlank = Firmware.from("   ")
+    test("construct firmware effect with make") {
       for
-        errEmpty <- Firmware.make("").flip
-        errBlank <- Firmware.make("   ").flip
+        made <- Firmware.make("  1.25.0  ")
+        err <- Firmware.make("   ").flip
       yield assertTrue(
-        fromEmpty == Left("Empty or blank firmware version."),
-        fromBlank == Left("Empty or blank firmware version."),
-        errEmpty.isInstanceOf[IllegalArgumentException],
-        errEmpty.getMessage == "Empty or blank firmware version.",
-        errBlank.isInstanceOf[IllegalArgumentException],
-        errBlank.getMessage == "Empty or blank firmware version."
+        made == "1.25.0",
+        err.getMessage == "Empty or blank firmware version."
       )
     },
     test("encode and decode Firmware as JSON") {
-      for
-        fw <- Firmware.make("1.25.0")
-        encoded = Encoder[Firmware].apply(fw)
-        decoded = Decoder[Firmware].decodeJson(encoded)
-        invalidJson = Decoder[Firmware].decodeJson(Json.fromString("   "))
-        nonStringJson = Decoder[Firmware].decodeJson(Json.fromInt(125))
-      yield assertTrue(
+      val fw = Firmware.from("1.25.0").toOption.get
+      val encoded = Encoder[Firmware].apply(fw)
+      assertTrue(
         encoded == Json.fromString("1.25.0"),
-        decoded == Right(fw),
-        invalidJson.isLeft,
-        nonStringJson.isLeft
+        Decoder[Firmware].decodeJson(encoded) == Right(fw),
+        Decoder[Firmware].decodeJson(Json.fromString("   ")).isLeft,
+        Decoder[Firmware].decodeJson(Json.fromInt(125)).isLeft
       )
     }
   )

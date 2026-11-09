@@ -29,31 +29,33 @@ import zio.test.*
  */
 object LightSpec extends ZIOSpecDefault:
 
+  private val testMac = MacAddress.from("0123456789ab").toOption.get
+  private val testMac1 = MacAddress.from("aaaaaaaaaaaa").toOption.get
+  private val testMac2 = MacAddress.from("bbbbbbbbbbbb").toOption.get
+  private val testIp = IpAddress.from("192.168.1.50").toOption.get
+  private val testSig = Signal.Fair
+  private val testMod = Module.from("ESP32").toOption.get
+  private val testFw = Firmware.from("1.0.0").toOption.get
+  private val testDev = Device.from(1).toOption.get
+  private val testHome = Home.from(10).toOption.get
+  private val testRoom = Room.from(3).toOption.get
+  private val testGroup = Group.from(4).toOption.get
+
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("LightSpec")(
     test("delegate info fields correctly when info is present and absent") {
-      for
-        mac <- MacAddress.make("0123456789ab")
-        ip <- IpAddress.make("192.168.1.50")
-        sig <- Signal.make(-70)
-        mod <- Module.make("ESP32")
-        fw <- Firmware.make("1.0.0")
-        dev <- Device.make(1)
-        h <- Home.make(10)
-        r <- Room.make(3)
-        g <- Group.make(4)
-        info = Info(
-          ipAddress = ip,
-          signal = Some(sig),
-          module = Some(mod),
-          firmware = Some(fw),
-          device = Some(dev),
-          home = Some(h),
-          room = Some(r),
-          group = Some(g)
-        )
-        lightWithoutInfo = Light(mac, None, None)
-        lightWithInfo = Light(mac, Some(Status.Disabled), Some(info))
-      yield assertTrue(
+      val info = Info(
+        ipAddress = testIp,
+        signal = Some(testSig),
+        module = Some(testMod),
+        firmware = Some(testFw),
+        device = Some(testDev),
+        home = Some(testHome),
+        room = Some(testRoom),
+        group = Some(testGroup)
+      )
+      val lightWithoutInfo = Light(testMac, None, None)
+      val lightWithInfo = Light(testMac, Some(Status.Disabled), Some(info))
+      assertTrue(
         lightWithoutInfo.ipAddress.isEmpty,
         lightWithoutInfo.signal.isEmpty,
         lightWithoutInfo.module.isEmpty,
@@ -62,23 +64,20 @@ object LightSpec extends ZIOSpecDefault:
         lightWithoutInfo.home.isEmpty,
         lightWithoutInfo.room.isEmpty,
         lightWithoutInfo.group.isEmpty,
-        lightWithInfo.ipAddress.contains(ip),
-        lightWithInfo.signal.contains(sig),
-        lightWithInfo.module.contains(mod),
-        lightWithInfo.firmware.contains(fw),
-        lightWithInfo.device.contains(dev),
-        lightWithInfo.home.contains(h),
-        lightWithInfo.room.contains(r),
-        lightWithInfo.group.contains(g)
+        lightWithInfo.ipAddress.contains(testIp),
+        lightWithInfo.signal.contains(testSig),
+        lightWithInfo.module.contains(testMod),
+        lightWithInfo.firmware.contains(testFw),
+        lightWithInfo.device.contains(testDev),
+        lightWithInfo.home.contains(testHome),
+        lightWithInfo.room.contains(testRoom),
+        lightWithInfo.group.contains(testGroup)
       )
     },
     test("order lights by MAC address using Ordering and cats Order") {
-      for
-        mac1 <- MacAddress.make("aaaaaaaaaaaa")
-        mac2 <- MacAddress.make("bbbbbbbbbbbb")
-        light1 = Light(mac1, None, None)
-        light2 = Light(mac2, None, None)
-      yield assertTrue(
+      val light1 = Light(testMac1, None, None)
+      val light2 = Light(testMac2, None, None)
+      assertTrue(
         Ordering[Light].compare(light1, light2) < 0,
         Ordering[Light].compare(light2, light1) > 0,
         Ordering[Light].compare(light1, light1) == 0,
@@ -87,18 +86,16 @@ object LightSpec extends ZIOSpecDefault:
       )
     },
     test("encode and decode Light as JSON") {
-      for
-        mac <- MacAddress.make("0123456789ab")
-        lightMinimal = Light(mac, None, None)
-        encodedMin = Encoder[Light].apply(lightMinimal)
-        decodedMin = Decoder[Light].decodeJson(encodedMin)
-        ip <- IpAddress.make("192.168.1.1")
-        lightFull = Light(mac, Some(Status.Disabled), Some(Info(ip)))
-        encodedFull = Encoder[Light].apply(lightFull)
-        decodedFull = Decoder[Light].decodeJson(encodedFull)
-        missingMac = Decoder[Light].decodeJson(Json.obj())
-        invalidMac = Decoder[Light].decodeJson(Json.obj("macAddress" -> Json.fromString("bad-mac")))
-      yield assertTrue(
+      val lightMinimal = Light(testMac, None, None)
+      val encodedMin = Encoder[Light].apply(lightMinimal)
+      val decodedMin = Decoder[Light].decodeJson(encodedMin)
+      val ip = IpAddress.from("192.168.1.1").toOption.get
+      val lightFull = Light(testMac, Some(Status.Disabled), Some(Info(ip)))
+      val encodedFull = Encoder[Light].apply(lightFull)
+      val decodedFull = Decoder[Light].decodeJson(encodedFull)
+      val missingMac = Decoder[Light].decodeJson(Json.obj())
+      val invalidMac = Decoder[Light].decodeJson(Json.obj("macAddress" -> Json.fromString("bad-mac")))
+      assertTrue(
         encodedMin == Json.obj("macAddress" -> Json.fromString("0123456789ab")),
         decodedMin == Right(lightMinimal),
         decodedFull == Right(lightFull),

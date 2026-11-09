@@ -19,7 +19,7 @@ package model
 
 import io.circe.{Decoder, Encoder, Json}
 
-import zio.{Scope, ZIO}
+import zio.Scope
 import zio.test.*
 
 /**
@@ -29,17 +29,16 @@ object StatusSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("StatusSpec")(
     test("update brightness on enabled statuses using withBrightness") {
-      for
-        b1 <- Brightness.make(30)
-        b2 <- Brightness.make(80)
-        temp <- Temperature.make(3000)
-        spd <- Speed.make(50)
-        col <- Color.make(255, 100, 50)
-        white = Status.White(temp, b1)
-        stat = Status.Defined.Static(Scene.Static.Cozy, b1)
-        dyn = Status.Defined.Dynamic(Scene.Dynamic.Party, spd, b1)
-        cust = Status.Custom(col, b1)
-      yield assertTrue(
+      val b1 = Brightness.from(30).toOption.get
+      val b2 = Brightness.from(80).toOption.get
+      val temp = Temperature.from(3000).toOption.get
+      val spd = Speed.from(50).toOption.get
+      val col = Color.from(255, 100, 50).toOption.get
+      val white = Status.White(temp, b1)
+      val stat = Status.Defined.Static(Scene.Static.Cozy, b1)
+      val dyn = Status.Defined.Dynamic(Scene.Dynamic.Party, spd, b1)
+      val cust = Status.Custom(col, b1)
+      assertTrue(
         white.withBrightness(b2) == Status.White(temp, b2),
         stat.withBrightness(b2) == Status.Defined.Static(Scene.Static.Cozy, b2),
         dyn.withBrightness(b2) == Status.Defined.Dynamic(Scene.Dynamic.Party, spd, b2),
@@ -60,29 +59,27 @@ object StatusSpec extends ZIOSpecDefault:
       )
     },
     test("encode and decode Status.White as JSON") {
-      for
-        temp <- Temperature.make(4000)
-        bright <- Brightness.make(75)
-        white = Status.White(temp, bright)
-        enc = Encoder[Status].apply(white)
-        dec = Decoder[Status].decodeJson(enc)
-        decWhite = Decoder[Status.White].decodeJson(enc)
-      yield assertTrue(
+      val temp = Temperature.from(4000).toOption.get
+      val bright = Brightness.from(75).toOption.get
+      val white = Status.White(temp, bright)
+      val enc = Encoder[Status].apply(white)
+      val dec = Decoder[Status].decodeJson(enc)
+      val decWhite = Decoder[Status.White].decodeJson(enc)
+      assertTrue(
         enc == Json.obj("temperature" -> Json.fromInt(4000), "brightness" -> Json.fromInt(75)),
         dec == Right(white),
         decWhite == Right(white)
       )
     },
     test("encode and decode Status.Defined.Static as JSON") {
-      for
-        bright <- Brightness.make(60)
-        scene = Scene.Static.WarmWhite
-        staticStatus = Status.Defined.Static(scene, bright)
-        enc = Encoder[Status].apply(staticStatus)
-        dec = Decoder[Status].decodeJson(enc)
-        decDefined = Decoder[Status.Defined].decodeJson(enc)
-        decStatic = Decoder[Status.Defined.Static].decodeJson(enc)
-      yield assertTrue(
+      val bright = Brightness.from(60).toOption.get
+      val scene = Scene.Static.WarmWhite
+      val staticStatus = Status.Defined.Static(scene, bright)
+      val enc = Encoder[Status].apply(staticStatus)
+      val dec = Decoder[Status].decodeJson(enc)
+      val decDefined = Decoder[Status.Defined].decodeJson(enc)
+      val decStatic = Decoder[Status.Defined.Static].decodeJson(enc)
+      assertTrue(
         enc == Json.obj("scene" -> Json.fromInt(11), "brightness" -> Json.fromInt(60)),
         dec == Right(staticStatus),
         decDefined == Right(staticStatus),
@@ -90,16 +87,15 @@ object StatusSpec extends ZIOSpecDefault:
       )
     },
     test("encode and decode Status.Defined.Dynamic as JSON") {
-      for
-        bright <- Brightness.make(90)
-        spd <- Speed.make(120)
-        scene = Scene.Dynamic.Sunset
-        dynStatus = Status.Defined.Dynamic(scene, spd, bright)
-        enc = Encoder[Status].apply(dynStatus)
-        dec = Decoder[Status].decodeJson(enc)
-        decDefined = Decoder[Status.Defined].decodeJson(enc)
-        decDynamic = Decoder[Status.Defined.Dynamic].decodeJson(enc)
-      yield assertTrue(
+      val bright = Brightness.from(90).toOption.get
+      val spd = Speed.from(120).toOption.get
+      val scene = Scene.Dynamic.Sunset
+      val dynStatus = Status.Defined.Dynamic(scene, spd, bright)
+      val enc = Encoder[Status].apply(dynStatus)
+      val dec = Decoder[Status].decodeJson(enc)
+      val decDefined = Decoder[Status.Defined].decodeJson(enc)
+      val decDynamic = Decoder[Status.Defined.Dynamic].decodeJson(enc)
+      assertTrue(
         enc == Json.obj("scene" -> Json.fromInt(3), "speed" -> Json.fromInt(120), "brightness" -> Json.fromInt(90)),
         dec == Right(dynStatus),
         decDefined == Right(dynStatus),
@@ -107,14 +103,13 @@ object StatusSpec extends ZIOSpecDefault:
       )
     },
     test("encode and decode Status.Custom as JSON") {
-      for
-        bright <- Brightness.make(85)
-        col <- Color.make(255, 0, 128)
-        custStatus = Status.Custom(col, bright)
-        enc = Encoder[Status].apply(custStatus)
-        dec = Decoder[Status].decodeJson(enc)
-        decCustom = Decoder[Status.Custom].decodeJson(enc)
-      yield assertTrue(
+      val bright = Brightness.from(85).toOption.get
+      val col = Color.from(255, 0, 128).toOption.get
+      val custStatus = Status.Custom(col, bright)
+      val enc = Encoder[Status].apply(custStatus)
+      val dec = Decoder[Status].decodeJson(enc)
+      val decCustom = Decoder[Status.Custom].decodeJson(enc)
+      assertTrue(
         dec == Right(custStatus),
         decCustom == Right(custStatus)
       )

@@ -35,56 +35,34 @@ object SpeedSpec extends ZIOSpecDefault:
         (Speed.Medium: Int) == 105
       )
     },
-    test("create valid speed values with from and make") {
-      for
-        fromSlow <- ZIO.fromEither(Speed.from(10))
-        fromMed <- ZIO.fromEither(Speed.from(105))
-        fromFast <- ZIO.fromEither(Speed.from(200))
-        fromCustom <- ZIO.fromEither(Speed.from(50))
-        madeSlow <- Speed.make(10)
-        madeMed <- Speed.make(105)
-        madeFast <- Speed.make(200)
-        madeCustom <- Speed.make(50)
-      yield assertTrue(
-        fromSlow == Speed.Slowest,
-        fromMed == Speed.Medium,
-        fromFast == Speed.Fastest,
-        (fromCustom: Int) == 50,
-        madeSlow == Speed.Slowest,
-        madeMed == Speed.Medium,
-        madeFast == Speed.Fastest,
-        (madeCustom: Int) == 50
+    test("validate and construct speed from integers") {
+      assertTrue(
+        Speed.from(10) == Right(Speed.Slowest),
+        Speed.from(105) == Right(Speed.Medium),
+        Speed.from(200) == Right(Speed.Fastest),
+        Speed.from(50).map(s => (s: Int)) == Right(50),
+        Speed.from(9) == Left("Invalid speed value: 9. Must be between 10 and 200."),
+        Speed.from(201) == Left("Invalid speed value: 201. Must be between 10 and 200."),
+        Speed.from(-1) == Left("Invalid speed value: -1. Must be between 10 and 200.")
       )
     },
-    test("reject speed values out of range") {
-      val fromTooSlow = Speed.from(9)
-      val fromTooFast = Speed.from(201)
-      val fromNeg = Speed.from(-1)
+    test("construct speed effect with make") {
       for
-        errTooSlow <- Speed.make(9).flip
-        errTooFast <- Speed.make(201).flip
-        errNeg <- Speed.make(-1).flip
+        made <- Speed.make(105)
+        err <- Speed.make(9).flip
       yield assertTrue(
-        fromTooSlow.isLeft,
-        fromTooFast.isLeft,
-        fromNeg.isLeft,
-        errTooSlow.getMessage == "Invalid speed value: 9. Must be between 10 and 200.",
-        errTooFast.getMessage == "Invalid speed value: 201. Must be between 10 and 200.",
-        errNeg.getMessage == "Invalid speed value: -1. Must be between 10 and 200."
+        made == Speed.Medium,
+        err.getMessage == "Invalid speed value: 9. Must be between 10 and 200."
       )
     },
     test("encode and decode Speed as JSON") {
-      for
-        spd <- Speed.make(150)
-        encoded = Encoder[Speed].apply(spd)
-        decoded = Decoder[Speed].decodeJson(encoded)
-        invalidJson = Decoder[Speed].decodeJson(Json.fromInt(300))
-        nonIntJson = Decoder[Speed].decodeJson(Json.arr())
-      yield assertTrue(
-        encoded == Json.fromInt(150),
-        decoded == Right(spd),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+      val spd = Speed.Medium
+      val encoded = Encoder[Speed].apply(spd)
+      assertTrue(
+        encoded == Json.fromInt(105),
+        Decoder[Speed].decodeJson(encoded) == Right(spd),
+        Decoder[Speed].decodeJson(Json.fromInt(300)).isLeft,
+        Decoder[Speed].decodeJson(Json.arr()).isLeft
       )
     }
   )

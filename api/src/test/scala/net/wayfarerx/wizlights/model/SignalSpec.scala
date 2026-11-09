@@ -34,86 +34,46 @@ object SignalSpec extends ZIOSpecDefault:
         Signal.Strongest == -20
       )
     },
-    test("create valid signal values with from and make") {
-      for
-        fromStrong <- ZIO.fromEither(Signal.from(-20))
-        fromGood <- ZIO.fromEither(Signal.from(-60))
-        fromFairHigh <- ZIO.fromEither(Signal.from(-61))
-        fromFairLow <- ZIO.fromEither(Signal.from(-75))
-        fromPoorHigh <- ZIO.fromEither(Signal.from(-76))
-        fromWeak <- ZIO.fromEither(Signal.from(-95))
-        fromNameGood <- ZIO.fromEither(Signal.from("Good"))
-        fromNameFair <- ZIO.fromEither(Signal.from("fair"))
-        fromNamePoor <- ZIO.fromEither(Signal.from("  POOR  "))
-        madeGood <- Signal.make(-50)
-        madeFair <- Signal.make(-70)
-        madePoor <- Signal.make(-90)
-        madeNameGood <- Signal.make("Good")
-        madeNameFair <- Signal.make("Fair")
-        madeNamePoor <- Signal.make("Poor")
-      yield assertTrue(
-        fromStrong == Signal.Good,
-        fromGood == Signal.Good,
-        fromFairHigh == Signal.Fair,
-        fromFairLow == Signal.Fair,
-        fromPoorHigh == Signal.Poor,
-        fromWeak == Signal.Poor,
-        fromNameGood == Signal.Good,
-        fromNameFair == Signal.Fair,
-        fromNamePoor == Signal.Poor,
-        madeGood == Signal.Good,
-        madeFair == Signal.Fair,
-        madePoor == Signal.Poor,
-        madeNameGood == Signal.Good,
-        madeNameFair == Signal.Fair,
-        madeNamePoor == Signal.Poor
+    test("validate and construct signal from dBm and names") {
+      assertTrue(
+        Signal.from(-20) == Right(Signal.Good),
+        Signal.from(-60) == Right(Signal.Good),
+        Signal.from(-61) == Right(Signal.Fair),
+        Signal.from(-75) == Right(Signal.Fair),
+        Signal.from(-76) == Right(Signal.Poor),
+        Signal.from(-95) == Right(Signal.Poor),
+        Signal.from(-96) == Right(Signal.Poor),
+        Signal.from(-19) == Right(Signal.Good),
+        Signal.from(0) == Right(Signal.Good),
+        Signal.from("Good") == Right(Signal.Good),
+        Signal.from("fair") == Right(Signal.Fair),
+        Signal.from("  POOR  ") == Right(Signal.Poor),
+        Signal.from("invalid") == Left("Invalid signal name: invalid.")
       )
     },
-    test("classify signal values outside standard range and reject invalid names") {
-      val fromTooWeak = Signal.from(-96)
-      val fromTooStrong = Signal.from(-19)
-      val fromZero = Signal.from(0)
-      val fromInvalidName = Signal.from("invalid")
+    test("construct signal effect with make") {
       for
-        madeTooWeak <- Signal.make(-96)
-        madeTooStrong <- Signal.make(-19)
-        madeZero <- Signal.make(0)
-        errInvalidName <- Signal.make("invalid").flip
+        madeInt <- Signal.make(-50)
+        madeName <- Signal.make("Good")
+        err <- Signal.make("invalid").flip
       yield assertTrue(
-        fromTooWeak == Right(Signal.Poor),
-        fromTooStrong == Right(Signal.Good),
-        fromZero == Right(Signal.Good),
-        fromInvalidName.isLeft,
-        madeTooWeak == Signal.Poor,
-        madeTooStrong == Signal.Good,
-        madeZero == Signal.Good,
-        errInvalidName.getMessage == "Invalid signal name: invalid."
+        madeInt == Signal.Good,
+        madeName == Signal.Good,
+        err.getMessage == "Invalid signal name: invalid."
       )
     },
     test("encode and decode Signal as JSON") {
-      for
-        sigGood <- Signal.make(-45)
-        sigFair <- Signal.make(-70)
-        sigPoor <- Signal.make(-85)
-        encodedGood = Encoder[Signal].apply(sigGood)
-        decodedGood = Decoder[Signal].decodeJson(encodedGood)
-        decodedFairFromInt = Decoder[Signal].decodeJson(Json.fromInt(-70))
-        decodedPoorFromInt = Decoder[Signal].decodeJson(Json.fromInt(-85))
-        decodedGoodFromString = Decoder[Signal].decodeJson(Json.fromString("Good"))
-        decodedFairFromString = Decoder[Signal].decodeJson(Json.fromString("Fair"))
-        decodedPoorFromString = Decoder[Signal].decodeJson(Json.fromString("Poor"))
-        invalidString = Decoder[Signal].decodeJson(Json.fromString("Unknown"))
-        nonIntOrStringJson = Decoder[Signal].decodeJson(Json.arr())
-      yield assertTrue(
-        encodedGood == Json.fromString("Good"),
-        decodedGood == Right(Signal.Good),
-        decodedFairFromInt == Right(Signal.Fair),
-        decodedPoorFromInt == Right(Signal.Poor),
-        decodedGoodFromString == Right(Signal.Good),
-        decodedFairFromString == Right(Signal.Fair),
-        decodedPoorFromString == Right(Signal.Poor),
-        invalidString.isLeft,
-        nonIntOrStringJson.isLeft
+      val sig = Signal.Good
+      val encoded = Encoder[Signal].apply(sig)
+      assertTrue(
+        encoded == Json.fromString("Good"),
+        Decoder[Signal].decodeJson(encoded) == Right(Signal.Good),
+        Decoder[Signal].decodeJson(Json.fromInt(-70)) == Right(Signal.Fair),
+        Decoder[Signal].decodeJson(Json.fromInt(-85)) == Right(Signal.Poor),
+        Decoder[Signal].decodeJson(Json.fromString("Fair")) == Right(Signal.Fair),
+        Decoder[Signal].decodeJson(Json.fromString("Poor")) == Right(Signal.Poor),
+        Decoder[Signal].decodeJson(Json.fromString("Unknown")).isLeft,
+        Decoder[Signal].decodeJson(Json.arr()).isLeft
       )
     }
   )

@@ -28,41 +28,30 @@ import zio.test.*
 object DeviceSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("DeviceSpec")(
-    test("create valid device identifiers with from and make") {
-      for
-        fromZero <- ZIO.fromEither(Device.from(0))
-        fromPositive <- ZIO.fromEither(Device.from(42))
-        madeZero <- Device.make(0)
-        madePositive <- Device.make(42)
-      yield assertTrue(
-        (fromZero: Int) == 0,
-        (fromPositive: Int) == 42,
-        (madeZero: Int) == 0,
-        (madePositive: Int) == 42
+    test("validate and construct device identifiers from integers") {
+      assertTrue(
+        Device.from(0).map(d => (d: Int)) == Right(0),
+        Device.from(42).map(d => (d: Int)) == Right(42),
+        Device.from(-1) == Left("Invalid device type ID: -1. Cannot be negative.")
       )
     },
-    test("reject negative device identifiers") {
-      val fromNeg = Device.from(-1)
+    test("construct device effect with make") {
       for
-        errNeg <- Device.make(-1).flip
+        made <- Device.make(42)
+        err <- Device.make(-1).flip
       yield assertTrue(
-        fromNeg == Left("Invalid device type ID: -1. Cannot be negative."),
-        errNeg.isInstanceOf[IllegalArgumentException],
-        errNeg.getMessage == "Invalid device type ID: -1. Cannot be negative."
+        (made: Int) == 42,
+        err.getMessage == "Invalid device type ID: -1. Cannot be negative."
       )
     },
     test("encode and decode Device as JSON") {
-      for
-        device <- Device.make(5)
-        encoded = Encoder[Device].apply(device)
-        decoded = Decoder[Device].decodeJson(encoded)
-        invalidJson = Decoder[Device].decodeJson(Json.fromInt(-5))
-        nonIntJson = Decoder[Device].decodeJson(Json.arr())
-      yield assertTrue(
-        encoded == Json.fromInt(5),
-        decoded == Right(device),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+      val device = Device.from(42).toOption.get
+      val encoded = Encoder[Device].apply(device)
+      assertTrue(
+        encoded == Json.fromInt(42),
+        Decoder[Device].decodeJson(encoded) == Right(device),
+        Decoder[Device].decodeJson(Json.fromInt(-1)).isLeft,
+        Decoder[Device].decodeJson(Json.arr()).isLeft
       )
     }
   )

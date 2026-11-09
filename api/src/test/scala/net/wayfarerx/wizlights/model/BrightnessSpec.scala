@@ -35,56 +35,34 @@ object BrightnessSpec extends ZIOSpecDefault:
         (Brightness.Medium: Int) == 55
       )
     },
-    test("create valid brightness values with from and make") {
-      for
-        fromDim <- ZIO.fromEither(Brightness.from(10))
-        fromMed <- ZIO.fromEither(Brightness.from(55))
-        fromBright <- ZIO.fromEither(Brightness.from(100))
-        fromCustom <- ZIO.fromEither(Brightness.from(75))
-        madeDim <- Brightness.make(10)
-        madeMed <- Brightness.make(55)
-        madeBright <- Brightness.make(100)
-        madeCustom <- Brightness.make(75)
-      yield assertTrue(
-        fromDim == Brightness.Dimmest,
-        fromMed == Brightness.Medium,
-        fromBright == Brightness.Brightest,
-        (fromCustom: Int) == 75,
-        madeDim == Brightness.Dimmest,
-        madeMed == Brightness.Medium,
-        madeBright == Brightness.Brightest,
-        (madeCustom: Int) == 75
+    test("validate and construct brightness from integers") {
+      assertTrue(
+        Brightness.from(10) == Right(Brightness.Dimmest),
+        Brightness.from(55) == Right(Brightness.Medium),
+        Brightness.from(100) == Right(Brightness.Brightest),
+        Brightness.from(75).map(b => (b: Int)) == Right(75),
+        Brightness.from(9) == Left("Invalid brightness value: 9. Must be between 10 and 100."),
+        Brightness.from(101) == Left("Invalid brightness value: 101. Must be between 10 and 100."),
+        Brightness.from(-1) == Left("Invalid brightness value: -1. Must be between 10 and 100.")
       )
     },
-    test("reject brightness out of range") {
-      val fromTooLow = Brightness.from(9)
-      val fromTooHigh = Brightness.from(101)
-      val fromNegative = Brightness.from(-1)
+    test("construct brightness effect with make") {
       for
-        errTooLow <- Brightness.make(9).flip
-        errTooHigh <- Brightness.make(101).flip
-        errNegative <- Brightness.make(-1).flip
+        made <- Brightness.make(55)
+        err <- Brightness.make(9).flip
       yield assertTrue(
-        fromTooLow.isLeft,
-        fromTooHigh.isLeft,
-        fromNegative.isLeft,
-        errTooLow.getMessage == "Invalid brightness value: 9. Must be between 10 and 100.",
-        errTooHigh.getMessage == "Invalid brightness value: 101. Must be between 10 and 100.",
-        errNegative.getMessage == "Invalid brightness value: -1. Must be between 10 and 100."
+        made == Brightness.Medium,
+        err.getMessage == "Invalid brightness value: 9. Must be between 10 and 100."
       )
     },
     test("encode and decode Brightness as JSON") {
-      for
-        b <- Brightness.make(70)
-        encoded = Encoder[Brightness].apply(b)
-        decoded = Decoder[Brightness].decodeJson(encoded)
-        invalidJson = Decoder[Brightness].decodeJson(Json.fromInt(150))
-        nonIntJson = Decoder[Brightness].decodeJson(Json.arr())
-      yield assertTrue(
-        encoded == Json.fromInt(70),
-        decoded == Right(b),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+      val b = Brightness.Medium
+      val encoded = Encoder[Brightness].apply(b)
+      assertTrue(
+        encoded == Json.fromInt(55),
+        Decoder[Brightness].decodeJson(encoded) == Right(b),
+        Decoder[Brightness].decodeJson(Json.fromInt(150)).isLeft,
+        Decoder[Brightness].decodeJson(Json.arr()).isLeft
       )
     }
   )

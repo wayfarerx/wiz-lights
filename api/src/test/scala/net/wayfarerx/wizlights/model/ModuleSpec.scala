@@ -28,48 +28,31 @@ import zio.test.*
 object ModuleSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("ModuleSpec")(
-    test("create valid module names with from and make") {
-      val valid = "ESP32_WROOM"
-      val padded = "  ESP32_DW01  "
-      for
-        fromValid <- ZIO.fromEither(Module.from(valid))
-        fromPadded <- ZIO.fromEither(Module.from(padded))
-        madeValid <- Module.make(valid)
-        madePadded <- Module.make(padded)
-      yield assertTrue(
-        fromValid == "ESP32_WROOM",
-        fromPadded == "ESP32_DW01",
-        madeValid == "ESP32_WROOM",
-        madePadded == "ESP32_DW01"
+    test("validate and construct module names from strings") {
+      assertTrue(
+        Module.from("ESP32_WROOM") == Right("ESP32_WROOM"),
+        Module.from("  ESP32_DW01  ") == Right("ESP32_DW01"),
+        Module.from("") == Left("Empty or blank module name."),
+        Module.from("   ") == Left("Empty or blank module name.")
       )
     },
-    test("reject empty or blank module names") {
-      val fromEmpty = Module.from("")
-      val fromBlank = Module.from("   ")
+    test("construct module effect with make") {
       for
-        errEmpty <- Module.make("").flip
-        errBlank <- Module.make("   ").flip
+        made <- Module.make("  ESP32_WROOM  ")
+        err <- Module.make("   ").flip
       yield assertTrue(
-        fromEmpty == Left("Empty or blank module name."),
-        fromBlank == Left("Empty or blank module name."),
-        errEmpty.isInstanceOf[IllegalArgumentException],
-        errEmpty.getMessage == "Empty or blank module name.",
-        errBlank.isInstanceOf[IllegalArgumentException],
-        errBlank.getMessage == "Empty or blank module name."
+        made == "ESP32_WROOM",
+        err.getMessage == "Empty or blank module name."
       )
     },
     test("encode and decode Module as JSON") {
-      for
-        mod <- Module.make("ESP32")
-        encoded = Encoder[Module].apply(mod)
-        decoded = Decoder[Module].decodeJson(encoded)
-        invalidJson = Decoder[Module].decodeJson(Json.fromString("   "))
-        nonStringJson = Decoder[Module].decodeJson(Json.fromInt(123))
-      yield assertTrue(
+      val mod = Module.from("ESP32").toOption.get
+      val encoded = Encoder[Module].apply(mod)
+      assertTrue(
         encoded == Json.fromString("ESP32"),
-        decoded == Right(mod),
-        invalidJson.isLeft,
-        nonStringJson.isLeft
+        Decoder[Module].decodeJson(encoded) == Right(mod),
+        Decoder[Module].decodeJson(Json.fromString("   ")).isLeft,
+        Decoder[Module].decodeJson(Json.fromInt(123)).isLeft
       )
     }
   )

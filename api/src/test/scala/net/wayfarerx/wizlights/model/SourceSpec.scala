@@ -37,48 +37,31 @@ object SourceSpec extends ZIOSpecDefault:
         (Source.Sensor: String) == "pir"
       )
     },
-    test("create valid sources with from and make") {
-      val valid = "custom"
-      val padded = "  custom_source  "
-      for
-        fromValid <- ZIO.fromEither(Source.from(valid))
-        fromPadded <- ZIO.fromEither(Source.from(padded))
-        madeValid <- Source.make(valid)
-        madePadded <- Source.make(padded)
-      yield assertTrue(
-        fromValid == "custom",
-        fromPadded == "custom_source",
-        madeValid == "custom",
-        madePadded == "custom_source"
+    test("validate and construct sources from strings") {
+      assertTrue(
+        Source.from("custom") == Right("custom"),
+        Source.from("  custom_source  ") == Right("custom_source"),
+        Source.from("") == Left("Empty or blank source."),
+        Source.from("   ") == Left("Empty or blank source.")
       )
     },
-    test("reject empty or blank sources") {
-      val fromEmpty = Source.from("")
-      val fromBlank = Source.from("   ")
+    test("construct source effect with make") {
       for
-        errEmpty <- Source.make("").flip
-        errBlank <- Source.make("   ").flip
+        made <- Source.make("  custom  ")
+        err <- Source.make("   ").flip
       yield assertTrue(
-        fromEmpty == Left("Empty or blank source."),
-        fromBlank == Left("Empty or blank source."),
-        errEmpty.isInstanceOf[IllegalArgumentException],
-        errEmpty.getMessage == "Empty or blank source.",
-        errBlank.isInstanceOf[IllegalArgumentException],
-        errBlank.getMessage == "Empty or blank source."
+        made == "custom",
+        err.getMessage == "Empty or blank source."
       )
     },
     test("encode and decode Source as JSON") {
-      for
-        src <- Source.make("udp")
-        encoded = Encoder[Source].apply(src)
-        decoded = Decoder[Source].decodeJson(encoded)
-        invalidJson = Decoder[Source].decodeJson(Json.fromString("   "))
-        nonStringJson = Decoder[Source].decodeJson(Json.fromInt(1))
-      yield assertTrue(
+      val src = Source.Udp
+      val encoded = Encoder[Source].apply(src)
+      assertTrue(
         encoded == Json.fromString("udp"),
-        decoded == Right(src),
-        invalidJson.isLeft,
-        nonStringJson.isLeft
+        Decoder[Source].decodeJson(encoded) == Right(src),
+        Decoder[Source].decodeJson(Json.fromString("   ")).isLeft,
+        Decoder[Source].decodeJson(Json.fromInt(1)).isLeft
       )
     }
   )

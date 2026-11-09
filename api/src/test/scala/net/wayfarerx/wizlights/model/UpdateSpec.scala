@@ -18,45 +18,45 @@ package net.wayfarerx.wizlights.model
 
 import io.circe.{Decoder, Encoder, Json}
 
+import zio.Scope
 import zio.test.*
-import zio.{Scope, ZIO}
 
 /**
  * Specifications for the Update service model.
  */
 object UpdateSpec extends ZIOSpecDefault:
 
+  private val testBright = Brightness.from(50).toOption.get
+  private val testTemp = Temperature.from(3000).toOption.get
+  private val testCol = Color.from(255, 0, 0).toOption.get
+  private val testSpd = Speed.from(100).toOption.get
+
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("UpdateSpec")(
     test("create and pattern match all Update variations") {
-      for
-        bright <- Brightness.make(50)
-        temp <- Temperature.make(3000)
-        col <- Color.make(255, 0, 0)
-        spd <- Speed.make(100)
-        staticScene = Scene.Static.Cozy
-        dynamicScene = Scene.Dynamic.Sunset
-        status = Status.White(temp, bright)
-        updates: List[Update] = List(
-          Update.Enabled(true),
-          Update.Brightness(bright),
-          Update.Temperature(temp),
-          Update.Color(col),
-          Update.Scene(staticScene),
-          Update.Dynamic(dynamicScene, spd),
-          Update.Speed(spd),
-          Update.Status(status)
-        )
-        matched = updates.map {
-          case Update.Enabled(e) => s"enabled:$e"
-          case Update.Brightness(b) => s"brightness:${b: Int}"
-          case Update.Temperature(t) => s"temperature:${t: Int}"
-          case Update.Color(c) => s"color:${c.red}"
-          case Update.Scene(s) => s"static:${s.name}"
-          case Update.Dynamic(s, sp) => s"dynamic:${s.name}:${sp: Int}"
-          case Update.Speed(sp) => s"speed:${sp: Int}"
-          case Update.Status(st) => s"status:$st"
-        }
-      yield assertTrue(
+      val staticScene = Scene.Static.Cozy
+      val dynamicScene = Scene.Dynamic.Sunset
+      val status = Status.White(testTemp, testBright)
+      val updates: List[Update] = List(
+        Update.Enabled(true),
+        Update.Brightness(testBright),
+        Update.Temperature(testTemp),
+        Update.Color(testCol),
+        Update.Scene(staticScene),
+        Update.Dynamic(dynamicScene, testSpd),
+        Update.Speed(testSpd),
+        Update.Status(status)
+      )
+      val matched = updates.map {
+        case Update.Enabled(e) => s"enabled:$e"
+        case Update.Brightness(b) => s"brightness:${b: Int}"
+        case Update.Temperature(t) => s"temperature:${t: Int}"
+        case Update.Color(c) => s"color:${c.red}"
+        case Update.Scene(s) => s"static:${s.name}"
+        case Update.Dynamic(s, sp) => s"dynamic:${s.name}:${sp: Int}"
+        case Update.Speed(sp) => s"speed:${sp: Int}"
+        case Update.Status(st) => s"status:$st"
+      }
+      assertTrue(
         matched == List(
           "enabled:true",
           "brightness:50",
@@ -70,33 +70,28 @@ object UpdateSpec extends ZIOSpecDefault:
       )
     },
     test("encode and decode all Update variations as JSON") {
-      for
-        bright <- Brightness.make(50)
-        temp <- Temperature.make(3000)
-        col <- Color.make(255, 0, 0)
-        spd <- Speed.make(100)
-        staticScene = Scene.Static.Cozy
-        dynamicScene = Scene.Dynamic.Sunset
-        status = Status.White(temp, bright)
-        upEnabled = Update.Enabled(true)
-        upBrightness = Update.Brightness(bright)
-        upTemp = Update.Temperature(temp)
-        upColor = Update.Color(col)
-        upScene = Update.Scene(staticScene)
-        upDyn = Update.Dynamic(dynamicScene, spd)
-        upSpeed = Update.Speed(spd)
-        upStatus = Update.Status(status)
-      yield
-        val encEnabled = Encoder[Update].apply(upEnabled)
-        val encBrightness = Encoder[Update].apply(upBrightness)
-        val encTemp = Encoder[Update].apply(upTemp)
-        val encColor = Encoder[Update].apply(upColor)
-        val encScene = Encoder[Update].apply(upScene)
-        val encDyn = Encoder[Update].apply(upDyn)
-        val encSpeed = Encoder[Update].apply(upSpeed)
-        val encStatus = Encoder[Update].apply(upStatus)
+      val staticScene = Scene.Static.Cozy
+      val dynamicScene = Scene.Dynamic.Sunset
+      val status = Status.White(testTemp, testBright)
+      val upEnabled = Update.Enabled(true)
+      val upBrightness = Update.Brightness(testBright)
+      val upTemp = Update.Temperature(testTemp)
+      val upColor = Update.Color(testCol)
+      val upScene = Update.Scene(staticScene)
+      val upDyn = Update.Dynamic(dynamicScene, testSpd)
+      val upSpeed = Update.Speed(testSpd)
+      val upStatus = Update.Status(status)
 
-        assertTrue(
+      val encEnabled = Encoder[Update].apply(upEnabled)
+      val encBrightness = Encoder[Update].apply(upBrightness)
+      val encTemp = Encoder[Update].apply(upTemp)
+      val encColor = Encoder[Update].apply(upColor)
+      val encScene = Encoder[Update].apply(upScene)
+      val encDyn = Encoder[Update].apply(upDyn)
+      val encSpeed = Encoder[Update].apply(upSpeed)
+      val encStatus = Encoder[Update].apply(upStatus)
+
+      assertTrue(
           encEnabled == Json.obj("enabled" -> Json.fromBoolean(true)),
           encBrightness == Json.obj("brightness" -> Json.fromInt(50)),
           encTemp == Json.obj("temperature" -> Json.fromInt(3000)),

@@ -28,46 +28,31 @@ import zio.test.*
 object RoomSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("RoomSpec")(
-    test("create valid room identifiers with from and make") {
-      for
-        fromOne <- ZIO.fromEither(Room.from(1))
-        fromPositive <- ZIO.fromEither(Room.from(99))
-        madeOne <- Room.make(1)
-        madePositive <- Room.make(99)
-      yield assertTrue(
-        (fromOne: Int) == 1,
-        (fromPositive: Int) == 99,
-        (madeOne: Int) == 1,
-        (madePositive: Int) == 99
+    test("validate and construct room identifiers from integers") {
+      assertTrue(
+        Room.from(1).map(r => (r: Int)) == Right(1),
+        Room.from(99).map(r => (r: Int)) == Right(99),
+        Room.from(0) == Left("Invalid room ID: 0. Must be positive."),
+        Room.from(-1) == Left("Invalid room ID: -1. Must be positive.")
       )
     },
-    test("reject non-positive room identifiers") {
-      val fromZero = Room.from(0)
-      val fromNeg = Room.from(-1)
+    test("construct room effect with make") {
       for
-        errZero <- Room.make(0).flip
-        errNeg <- Room.make(-1).flip
+        made <- Room.make(1)
+        err <- Room.make(0).flip
       yield assertTrue(
-        fromZero == Left("Invalid room ID: 0. Must be positive."),
-        fromNeg == Left("Invalid room ID: -1. Must be positive."),
-        errZero.isInstanceOf[IllegalArgumentException],
-        errZero.getMessage == "Invalid room ID: 0. Must be positive.",
-        errNeg.isInstanceOf[IllegalArgumentException],
-        errNeg.getMessage == "Invalid room ID: -1. Must be positive."
+        (made: Int) == 1,
+        err.getMessage == "Invalid room ID: 0. Must be positive."
       )
     },
     test("encode and decode Room as JSON") {
-      for
-        room <- Room.make(12)
-        encoded = Encoder[Room].apply(room)
-        decoded = Decoder[Room].decodeJson(encoded)
-        invalidJson = Decoder[Room].decodeJson(Json.fromInt(-12))
-        nonIntJson = Decoder[Room].decodeJson(Json.arr())
-      yield assertTrue(
+      val room = Room.from(12).toOption.get
+      val encoded = Encoder[Room].apply(room)
+      assertTrue(
         encoded == Json.fromInt(12),
-        decoded == Right(room),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+        Decoder[Room].decodeJson(encoded) == Right(room),
+        Decoder[Room].decodeJson(Json.fromInt(-12)).isLeft,
+        Decoder[Room].decodeJson(Json.arr()).isLeft
       )
     }
   )

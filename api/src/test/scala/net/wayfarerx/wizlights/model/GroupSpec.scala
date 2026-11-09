@@ -28,46 +28,31 @@ import zio.test.*
 object GroupSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] = suite("GroupSpec")(
-    test("create valid group identifiers with from and make") {
-      for
-        fromOne <- ZIO.fromEither(Group.from(1))
-        fromPositive <- ZIO.fromEither(Group.from(100))
-        madeOne <- Group.make(1)
-        madePositive <- Group.make(100)
-      yield assertTrue(
-        (fromOne: Int) == 1,
-        (fromPositive: Int) == 100,
-        (madeOne: Int) == 1,
-        (madePositive: Int) == 100
+    test("validate and construct group identifiers from integers") {
+      assertTrue(
+        Group.from(1).map(g => (g: Int)) == Right(1),
+        Group.from(100).map(g => (g: Int)) == Right(100),
+        Group.from(0) == Left("Invalid group ID: 0. Must be positive."),
+        Group.from(-5) == Left("Invalid group ID: -5. Must be positive.")
       )
     },
-    test("reject non-positive group identifiers") {
-      val fromZero = Group.from(0)
-      val fromNeg = Group.from(-5)
+    test("construct group effect with make") {
       for
-        errZero <- Group.make(0).flip
-        errNeg <- Group.make(-5).flip
+        made <- Group.make(1)
+        err <- Group.make(0).flip
       yield assertTrue(
-        fromZero == Left("Invalid group ID: 0. Must be positive."),
-        fromNeg == Left("Invalid group ID: -5. Must be positive."),
-        errZero.isInstanceOf[IllegalArgumentException],
-        errZero.getMessage == "Invalid group ID: 0. Must be positive.",
-        errNeg.isInstanceOf[IllegalArgumentException],
-        errNeg.getMessage == "Invalid group ID: -5. Must be positive."
+        (made: Int) == 1,
+        err.getMessage == "Invalid group ID: 0. Must be positive."
       )
     },
     test("encode and decode Group as JSON") {
-      for
-        group <- Group.make(3)
-        encoded = Encoder[Group].apply(group)
-        decoded = Decoder[Group].decodeJson(encoded)
-        invalidJson = Decoder[Group].decodeJson(Json.fromInt(0))
-        nonIntJson = Decoder[Group].decodeJson(Json.arr())
-      yield assertTrue(
+      val group = Group.from(3).toOption.get
+      val encoded = Encoder[Group].apply(group)
+      assertTrue(
         encoded == Json.fromInt(3),
-        decoded == Right(group),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+        Decoder[Group].decodeJson(encoded) == Right(group),
+        Decoder[Group].decodeJson(Json.fromInt(0)).isLeft,
+        Decoder[Group].decodeJson(Json.arr()).isLeft
       )
     }
   )

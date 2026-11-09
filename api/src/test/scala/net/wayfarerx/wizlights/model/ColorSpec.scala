@@ -49,22 +49,19 @@ object ColorSpec extends ZIOSpecDefault:
       )
 
     },
-    test("create valid colors with from and make") {
-      for
-        fromRgb <- ZIO.fromEither(Color.from(10, 20, 30).left.map(errs => new Exception(errs.mkString(", "))))
-        from5Ch <- ZIO.fromEither(Color.from(10, 20, 30, 40, 50).left.map(errs => new Exception(errs.mkString(", "))))
-        madeRgb <- Color.make(10, 20, 30)
-        made5Ch <- Color.make(10, 20, 30, 40, 50)
-      yield assertTrue(
-        fromRgb.red == 10 && fromRgb.green == 20 && fromRgb.blue == 30 && fromRgb.cool == 0 && fromRgb.warm == 0,
-        from5Ch.red == 10 && from5Ch.green == 20 && from5Ch.blue == 30 && from5Ch.cool == 40 && from5Ch.warm == 50,
-        madeRgb.red == 10 && madeRgb.green == 20 && madeRgb.blue == 30 && madeRgb.cool == 0 && madeRgb.warm == 0,
-        made5Ch.red == 10 && made5Ch.green == 20 && made5Ch.blue == 30 && made5Ch.cool == 40 && made5Ch.warm == 50
+    test("validate and construct colors with from") {
+      val badFrom = Color.from(-1, 256, 300, -5, 260)
+      assertTrue(
+        Color.from(10, 20, 30).exists(c => c.red == 10 && c.green == 20 && c.blue == 30 && c.cool == 0 && c.warm == 0),
+        Color.from(10, 20, 30, 40, 50).exists(c => c.red == 10 && c.green == 20 && c.blue == 30 && c.cool == 40 && c.warm == 50),
+        badFrom.isLeft,
+        badFrom.left.toOption.get.size == 5
       )
     },
-    test("reject out-of-range color components") {
-      val badFrom = Color.from(-1, 256, 300, -5, 260)
+    test("construct color effect with make") {
       for
+        madeRgb <- Color.make(10, 20, 30)
+        made5Ch <- Color.make(10, 20, 30, 40, 50)
         errRedLow <- Color.make(-1, 0, 0).flip
         errRedHigh <- Color.make(256, 0, 0).flip
         errGreenLow <- Color.make(0, -1, 0).flip
@@ -76,8 +73,8 @@ object ColorSpec extends ZIOSpecDefault:
         errWarmLow <- Color.make(0, 0, 0, 0, -1).flip
         errWarmHigh <- Color.make(0, 0, 0, 0, 256).flip
       yield assertTrue(
-        badFrom.isLeft,
-        badFrom.left.toOption.get.size == 5,
+        madeRgb.red == 10 && madeRgb.green == 20 && madeRgb.blue == 30 && madeRgb.cool == 0 && madeRgb.warm == 0,
+        made5Ch.red == 10 && made5Ch.green == 20 && made5Ch.blue == 30 && made5Ch.cool == 40 && made5Ch.warm == 50,
         errRedLow.getMessage.contains("Invalid red color component"),
         errRedHigh.getMessage.contains("Invalid red color component"),
         errGreenLow.getMessage.contains("Invalid green color component"),
@@ -91,16 +88,15 @@ object ColorSpec extends ZIOSpecDefault:
       )
     },
     test("encode and decode Color as JSON") {
-      for
-        rgb <- Color.make(255, 128, 0)
-        fiveCh <- Color.make(100, 150, 200, 50, 75)
-        encRgb = Encoder[Color].apply(rgb)
-        enc5Ch = Encoder[Color].apply(fiveCh)
-        decRgb = Decoder[Color].decodeJson(encRgb)
-        dec5Ch = Decoder[Color].decodeJson(enc5Ch)
-        invalidJson = Decoder[Color].decodeJson(Json.obj("red" -> Json.fromInt(300), "green" -> Json.fromInt(0), "blue" -> Json.fromInt(0)))
-        missingFields = Decoder[Color].decodeJson(Json.obj("red" -> Json.fromInt(10)))
-      yield assertTrue(
+      val rgb = Color.from(255, 128, 0).toOption.get
+      val fiveCh = Color.from(100, 150, 200, 50, 75).toOption.get
+      val encRgb = Encoder[Color].apply(rgb)
+      val enc5Ch = Encoder[Color].apply(fiveCh)
+      val decRgb = Decoder[Color].decodeJson(encRgb)
+      val dec5Ch = Decoder[Color].decodeJson(enc5Ch)
+      val invalidJson = Decoder[Color].decodeJson(Json.obj("red" -> Json.fromInt(300), "green" -> Json.fromInt(0), "blue" -> Json.fromInt(0)))
+      val missingFields = Decoder[Color].decodeJson(Json.obj("red" -> Json.fromInt(10)))
+      assertTrue(
         encRgb == Json.obj("red" -> Json.fromInt(255), "green" -> Json.fromInt(128), "blue" -> Json.fromInt(0)),
         enc5Ch == Json.obj("red" -> Json.fromInt(100), "green" -> Json.fromInt(150), "blue" -> Json.fromInt(200), "cool" -> Json.fromInt(50), "warm" -> Json.fromInt(75)),
         decRgb == Right(rgb),

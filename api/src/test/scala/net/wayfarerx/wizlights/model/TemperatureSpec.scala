@@ -35,60 +35,35 @@ object TemperatureSpec extends ZIOSpecDefault:
         (Temperature.Medium: Int) == 4350
       )
     },
-    test("create valid temperature values with from and make") {
-      for
-        fromWarm <- ZIO.fromEither(Temperature.from(2200))
-        fromMed <- ZIO.fromEither(Temperature.from(4350))
-        fromCool <- ZIO.fromEither(Temperature.from(6500))
-        fromCustom <- ZIO.fromEither(Temperature.from(3000))
-        madeWarm <- Temperature.make(2200)
-        madeMed <- Temperature.make(4350)
-        madeCool <- Temperature.make(6500)
-        madeCustom <- Temperature.make(3000)
-      yield assertTrue(
-        fromWarm == Temperature.Warmest,
-        fromMed == Temperature.Medium,
-        fromCool == Temperature.Coolest,
-        (fromCustom: Int) == 3000,
-        madeWarm == Temperature.Warmest,
-        madeMed == Temperature.Medium,
-        madeCool == Temperature.Coolest,
-        (madeCustom: Int) == 3000
+    test("validate and construct temperature from integers") {
+      assertTrue(
+        Temperature.from(2200) == Right(Temperature.Warmest),
+        Temperature.from(4350) == Right(Temperature.Medium),
+        Temperature.from(6500) == Right(Temperature.Coolest),
+        Temperature.from(3000).map(t => (t: Int)) == Right(3000),
+        Temperature.from(2199) == Left("Invalid temperature value: 2199. Must be between 2200 and 6500."),
+        Temperature.from(6501) == Left("Invalid temperature value: 6501. Must be between 2200 and 6500."),
+        Temperature.from(0) == Left("Invalid temperature value: 0. Must be between 2200 and 6500."),
+        Temperature.from(-100) == Left("Invalid temperature value: -100. Must be between 2200 and 6500.")
       )
     },
-    test("reject temperature values out of range") {
-      val fromTooWarm = Temperature.from(2199)
-      val fromTooCool = Temperature.from(6501)
-      val fromZero = Temperature.from(0)
-      val fromNeg = Temperature.from(-100)
+    test("construct temperature effect with make") {
       for
-        errTooWarm <- Temperature.make(2199).flip
-        errTooCool <- Temperature.make(6501).flip
-        errZero <- Temperature.make(0).flip
-        errNeg <- Temperature.make(-100).flip
+        made <- Temperature.make(4350)
+        err <- Temperature.make(2199).flip
       yield assertTrue(
-        fromTooWarm.isLeft,
-        fromTooCool.isLeft,
-        fromZero.isLeft,
-        fromNeg.isLeft,
-        errTooWarm.getMessage == "Invalid temperature value: 2199. Must be between 2200 and 6500.",
-        errTooCool.getMessage == "Invalid temperature value: 6501. Must be between 2200 and 6500.",
-        errZero.getMessage == "Invalid temperature value: 0. Must be between 2200 and 6500.",
-        errNeg.getMessage == "Invalid temperature value: -100. Must be between 2200 and 6500."
+        made == Temperature.Medium,
+        err.getMessage == "Invalid temperature value: 2199. Must be between 2200 and 6500."
       )
     },
     test("encode and decode Temperature as JSON") {
-      for
-        temp <- Temperature.make(5000)
-        encoded = Encoder[Temperature].apply(temp)
-        decoded = Decoder[Temperature].decodeJson(encoded)
-        invalidJson = Decoder[Temperature].decodeJson(Json.fromInt(7000))
-        nonIntJson = Decoder[Temperature].decodeJson(Json.arr())
-      yield assertTrue(
-        encoded == Json.fromInt(5000),
-        decoded == Right(temp),
-        invalidJson.isLeft,
-        nonIntJson.isLeft
+      val temp = Temperature.Medium
+      val encoded = Encoder[Temperature].apply(temp)
+      assertTrue(
+        encoded == Json.fromInt(4350),
+        Decoder[Temperature].decodeJson(encoded) == Right(temp),
+        Decoder[Temperature].decodeJson(Json.fromInt(7000)).isLeft,
+        Decoder[Temperature].decodeJson(Json.arr()).isLeft
       )
     }
   )

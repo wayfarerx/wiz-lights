@@ -50,6 +50,11 @@ object SceneSpec extends ZIOSpecDefault:
         errId <- Scene.make(9999).flip
         errName <- Scene.make("Nonexistent Scene").flip
       yield assertTrue(
+        Scene.from(11) == Right(Scene.Static.WarmWhite),
+        Scene.from("Warm White") == Right(Scene.Static.WarmWhite),
+        Scene.from("  warm white  ") == Right(Scene.Static.WarmWhite),
+        Scene.from(9999) == Left("Invalid scene ID: 9999."),
+        Scene.from("Nonexistent Scene") == Left("Invalid scene name: Nonexistent Scene."),
         sceneById == Scene.Static.WarmWhite,
         sceneByName == Scene.Static.WarmWhite,
         sceneByNameCaseInsensitive == Scene.Static.WarmWhite,
@@ -64,6 +69,10 @@ object SceneSpec extends ZIOSpecDefault:
         errDynamicId <- Scene.Static.make(1).flip
         errDynamicName <- Scene.Static.make("Ocean").flip
       yield assertTrue(
+        Scene.Static.from(14) == Right(Scene.Static.NightLight),
+        Scene.Static.from("Night Light") == Right(Scene.Static.NightLight),
+        Scene.Static.from(1) == Left("Invalid static scene ID: 1."),
+        Scene.Static.from("Ocean") == Left("Invalid static scene name: Ocean."),
         staticById == Scene.Static.NightLight,
         staticByName == Scene.Static.NightLight,
         errDynamicId.getMessage == "Invalid static scene ID: 1.",
@@ -77,6 +86,10 @@ object SceneSpec extends ZIOSpecDefault:
         errStaticId <- Scene.Dynamic.make(6).flip
         errStaticName <- Scene.Dynamic.make("Cozy").flip
       yield assertTrue(
+        Scene.Dynamic.from(3) == Right(Scene.Dynamic.Sunset),
+        Scene.Dynamic.from("Sunset") == Right(Scene.Dynamic.Sunset),
+        Scene.Dynamic.from(6) == Left("Invalid dynamic scene ID: 6."),
+        Scene.Dynamic.from("Cozy") == Left("Invalid dynamic scene name: Cozy."),
         dynById == Scene.Dynamic.Sunset,
         dynByName == Scene.Dynamic.Sunset,
         errStaticId.getMessage == "Invalid dynamic scene ID: 6.",
