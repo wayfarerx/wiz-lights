@@ -795,7 +795,9 @@ final class LightingLive private(
               devices.get.flatMap { devs =>
                 devs.get(macAddress) match
                   case Some(dev) if dev.authoritativeUntil.isDefined =>
-                    devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *> touch(macAddress)
+                    devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *>
+                      touch(macAddress) *>
+                      invoke(macAddress :: Nil)(GetPilotRequest())
                   case Some(_) =>
                     touch(macAddress) *> invoke(macAddress :: Nil)(GetPilotRequest())
                   case None =>
