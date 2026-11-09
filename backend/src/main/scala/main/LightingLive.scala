@@ -638,7 +638,8 @@ final class LightingLive private(
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
       for
-        _ <- devices.modify(devs => () -> devs.unregister(changes.macAddress))
+        _ <- cancelInvocations(macAddresses.toSet)
+        _ <- devices.modify(devs => () -> devs.unregister(changes.macAddress).clearAuthoritative(changes.macAddress))
         newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
         _ <- registerWith(macAddresses, force = true)
         _ <- invoke(macAddresses)(GetPilotRequest())
