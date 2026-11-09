@@ -499,7 +499,7 @@ final class LightingLive private(
     request: Option[RegistrationRequest] = None
   ): UIO[Unit] = for
     now <- currentTime
-    cutoff = now - (registrationTtl.toMillis * 0.8).toLong
+    cutoff = now - (registrationTtl.toMillis * 0.45).toLong
     devs <- devices.get
     unregisteredTargets = if force then targets else targets.filter { mac =>
       devs.get(mac).fold(true) { state =>
