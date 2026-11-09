@@ -687,7 +687,7 @@ final class LightingLive private(
       payload.b,
       payload.c,
       payload.w,
-      payload.src
+      payload.src.orElse(Some("sync"))
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret sync pilot changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
