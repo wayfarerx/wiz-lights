@@ -310,7 +310,7 @@ final class LightingLive private(
         state.inetAddress.get
     }.toSet ++ seeds
     _ <- if silentIps.nonEmpty then network.publish(Outgoing.Send(silentIps, GetPilotRequest())) else ZIO.unit
-    inactiveCutoff = now - (discoveryInterval.toMillis * 2)
+    inactiveCutoff = now - (discoveryInterval.toMillis * 2.5).toLong
     disconnectedDevices <- devices.modify(_.disconnectInactive(inactiveCutoff))
     _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
       events.publish(state.toLight -> None).ignore
@@ -320,7 +320,7 @@ final class LightingLive private(
   /** Purges outdated data. */
   private def purge: UIO[Unit] = for
     now <- currentTime
-    offlineCutoff = now - (discoveryInterval.toMillis * 2)
+    offlineCutoff = now - (discoveryInterval.toMillis * 2.5).toLong
     cutoff = now - purgeTimeout.toMillis
     disconnectedDevices <- devices.modify(_.disconnectInactive(offlineCutoff))
     _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
