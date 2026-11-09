@@ -784,9 +784,8 @@ final class LightingLive private(
     macAddress <- resolve(inetAddress, id)
     now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      for
-        completed <- completeInvocation(id, macAddress, now)
-        _ <- completed.flatMap(_._1) match
+      completeInvocation(id, macAddress, now).flatMap { completed =>
+        completed.flatMap(_._1) match
           case Some(update) =>
             if payload.success then
               devices.get.flatMap { devs =>
@@ -807,7 +806,7 @@ final class LightingLive private(
                 invoke(macAddress :: Nil)(GetPilotRequest())
           case None =>
             touch(macAddress)
-      yield ()
+      }
     }
   yield ()
 
