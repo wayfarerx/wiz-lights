@@ -68,8 +68,21 @@ final class LightingLive private(
   /** The duration after which stale invocations are purged. */
   private val InvocationTimeoutMillis: Long = 30_000L
 
+  /** The threshold after which device settings metadata is refreshed (one hour). */
+  private val SettingsRefreshThresholdMillis: Long = 3_600_000L
+
   /** The monotonic time in milliseconds. */
   private val currentTime: UIO[Long] = clock.nanoTime.map(TimeUnit.NANOSECONDS.toMillis)
+
+  /**
+   * Returns true if the device settings have not been queried or are older than the refresh threshold.
+   *
+   * @param state The device state to check.
+   * @param now   The current monotonic timestamp.
+   * @return True if the device settings should be refreshed.
+   */
+  private def shouldRefreshSettings(state: State, now: Long): Boolean =
+    state.settingsUpdatedAt.fold(true)(_ <= now - SettingsRefreshThresholdMillis)
 
 
   //
@@ -345,6 +358,12 @@ final class LightingLive private(
     _ <- ZIO.foreachDiscard(activeInvocations) { case (id, invocation) =>
       if invocation.createdAt < invocationCutoff then invocation.cancel *> invocations.remove(id).ignore else ZIO.unit
     }
+    devs <- devices.get
+    staleSettingsMacs = devs.values.collect {
+      case state if state.inetAddress.isDefined && shouldRefreshSettings(state, now) =>
+        state.macAddress
+    }
+    _ <- if staleSettingsMacs.nonEmpty then invoke(staleSettingsMacs)(GetSystemConfigRequest()) else ZIO.unit
   yield ()
 
   //
@@ -594,7 +613,7 @@ final class LightingLive private(
         newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
         _ <- registerWith(macAddresses, force = true)
         _ <- invoke(macAddresses)(GetPilotRequest())
-        _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if shouldRefreshSettings(newDevice, now) then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
       yield ()
     }
   yield ()
@@ -671,7 +690,7 @@ final class LightingLive private(
         case Some(_) =>
           for
             newDevice <- applyChanges(inetAddress, changes, None)
-            _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+            _ <- if shouldRefreshSettings(newDevice, now) then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
             _ <- registerWith(macAddresses)
           yield ()
         case None =>
@@ -714,7 +733,7 @@ final class LightingLive private(
           cancelInvocations(macAddresses.toSet, Some(_.hasUpdate))
         else ZIO.unit
         newDevice <- applyChanges(inetAddress, changes, changes.source)
-        _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+        _ <- if shouldRefreshSettings(newDevice, now) then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
       yield ()
     }
