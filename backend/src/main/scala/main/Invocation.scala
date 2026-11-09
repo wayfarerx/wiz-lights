@@ -79,19 +79,19 @@ private final class Invocation private(
    * Completes this invocation for the specified MAC address.
    *
    * @param macAddress The MAC address to remove from this invocation.
-   * @return The optional update associated with this invocation.
+   * @return Some(update) if this invocation targeted the specified MAC address, or None if it did not.
    */
-  def complete(macAddress: MacAddress): UIO[Option[Update]] = for
-    (upd, wasTarget) <- targetRef.modify {
+  def complete(macAddress: MacAddress): UIO[Option[Option[Update]]] = for
+    (res, wasTarget) <- targetRef.modify {
       case Some(target) if target == macAddress =>
-        (update, true) -> None
+        (Some(update), true) -> None
       case other =>
         (None, false) -> other
     }
     _ <- if wasTarget then
       fiberRef.getAndSet(None).flatMap(_.fold(ZIO.unit)(_.interrupt.unit))
     else ZIO.unit
-  yield upd
+  yield res
 
 /**
  * Factory for invocations.

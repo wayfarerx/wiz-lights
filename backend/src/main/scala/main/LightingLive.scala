@@ -287,18 +287,24 @@ final class LightingLive private(
    *
    * @param id The possible ID of the invocation to complete.
    * @param macAddress The MAC address that completed the invocation.
-   * @return The update associated with the invocation, if any.
+   * @return None if an ID was specified but no active matching invocation was found,
+   *         or Some(update) where update is the optional update associated with the invocation.
    */
-  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[Update]] = for
-    invocation <- id.fold[UIO[Option[Invocation]]](ZIO.none)(invocations.get)
-    result <- invocation.fold[UIO[Option[Update]]](ZIO.none) { invocation =>
-      for
-        result <- invocation.complete(macAddress)
-        target <- invocation.target
-        _ <- if target.isEmpty then invocations.remove(invocation.id) else ZIO.unit
-      yield result
-    }
-  yield result
+  private def completeInvocation(id: Option[Int], macAddress: MacAddress): UIO[Option[Option[Update]]] =
+    id match
+      case Some(invocationId) =>
+        invocations.get(invocationId).flatMap {
+          case Some(invocation) =>
+            for
+              result <- invocation.complete(macAddress)
+              target <- invocation.target
+              _ <- if target.isEmpty then invocations.remove(invocation.id) else ZIO.unit
+            yield result
+          case None =>
+            ZIO.none
+        }
+      case None =>
+        ZIO.some(None)
 
   /**
    * Performs periodic discovery, unicast health probing, and inactive device disconnection.
@@ -622,12 +628,16 @@ final class LightingLive private(
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get system config changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
-      for
-        _ <- completeInvocation(id, changes.macAddress)
-        newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
-        _ <- registerWith(macAddresses)
-      yield ()
+      completeInvocation(id, changes.macAddress).flatMap {
+        case Some(_) =>
+          for
+            newDevice <- applyChanges(inetAddress, changes, None)
+            _ <- if newDevice.status.isEmpty then invoke(macAddresses)(GetPilotRequest()) else ZIO.unit
+            _ <- registerWith(macAddresses)
+          yield ()
+        case None =>
+          touch(changes.macAddress)
+      }
     }
   yield ()
 
@@ -661,12 +671,16 @@ final class LightingLive private(
     ).asSome.catchAllCause(ZIO.logWarningCause("Unable to interpret get pilot changes.", _).map(_ => None))
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
-      for
-        _ <- completeInvocation(id, changes.macAddress)
-        newDevice <- applyChanges(inetAddress, changes, None)
-        _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
-        _ <- registerWith(macAddresses)
-      yield ()
+      completeInvocation(id, changes.macAddress).flatMap {
+        case Some(_) =>
+          for
+            newDevice <- applyChanges(inetAddress, changes, None)
+            _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
+            _ <- registerWith(macAddresses)
+          yield ()
+        case None =>
+          touch(changes.macAddress)
+      }
     }
   yield ()
 
@@ -723,9 +737,12 @@ final class LightingLive private(
     macAddress <- resolve(inetAddress, id)
     now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
-      completeInvocation(id, macAddress) *> {
-        if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, now), None)
-        else touch(macAddress) *> ZIO.logWarning(s"A registration request failed for $macAddress.")
+      completeInvocation(id, macAddress).flatMap {
+        case Some(_) =>
+          if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, now), None)
+          else touch(macAddress) *> ZIO.logWarning(s"A registration request failed for $macAddress.")
+        case None =>
+          touch(macAddress)
       }
     }
   yield ()
@@ -746,24 +763,26 @@ final class LightingLive private(
     now <- currentTime
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       for
-        update <- completeInvocation(id, macAddress)
-        _ <- update.fold(touch(macAddress)) { update =>
-          if payload.success then
-            devices.get.flatMap { devs =>
-              devs.get(macAddress) match
-                case Some(dev) if dev.authoritativeUntil.isDefined =>
-                  devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *> touch(macAddress)
-                case Some(_) =>
-                  touch(macAddress) *> invoke(macAddress :: Nil)(GetPilotRequest())
-                case None =>
-                  applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp)).unit
-            }
-          else
-            devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *>
-              touch(macAddress) *>
-              ZIO.logWarning(s"A setPilot request failed: $update.") *>
-              invoke(macAddress :: Nil)(GetPilotRequest())
-        }
+        completed <- completeInvocation(id, macAddress)
+        _ <- completed match
+          case Some(Some(update)) =>
+            if payload.success then
+              devices.get.flatMap { devs =>
+                devs.get(macAddress) match
+                  case Some(dev) if dev.authoritativeUntil.isDefined =>
+                    devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *> touch(macAddress)
+                  case Some(_) =>
+                    touch(macAddress) *> invoke(macAddress :: Nil)(GetPilotRequest())
+                  case None =>
+                    applyChanges(inetAddress, Changes.Updates(macAddress, now, update), Some(Source.Udp)).unit
+              }
+            else
+              devices.modify(devs => () -> devs.clearAuthoritative(macAddress)) *>
+                touch(macAddress) *>
+                ZIO.logWarning(s"A setPilot request failed: $update.") *>
+                invoke(macAddress :: Nil)(GetPilotRequest())
+          case Some(None) | None =>
+            touch(macAddress)
       yield ()
     }
   yield ()
