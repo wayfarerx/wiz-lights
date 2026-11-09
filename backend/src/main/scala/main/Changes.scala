@@ -118,10 +118,10 @@ private object Changes:
         MacAddress.make(macAddress) validate
           parseAssignment(homeId, Home.make) validate
           parseAssignment(roomId, Room.make) validate
-          moduleName.fold(ZIO.none)(Module.make(_).asSome) validate
-          fwVersion.fold(ZIO.none)(Firmware.make(_).asSome) validate
+          moduleName.fold[IO[IllegalArgumentException, Option[Module]]](ZIO.none)(m => Module.make(m).asSome.catchAll(_ => ZIO.none)) validate
+          fwVersion.fold[IO[IllegalArgumentException, Option[Firmware]]](ZIO.none)(v => Firmware.make(v).asSome.catchAll(_ => ZIO.none)) validate
           parseAssignment(groupId, Group.make) validate
-          typeId.fold(ZIO.none)(Device.make(_).asSome)
+          typeId.fold[IO[IllegalArgumentException, Option[Device]]](ZIO.none)(t => Device.make(t).asSome.catchAll(_ => ZIO.none))
     yield Settings(mac, timestamp, home, room, module, firmware, group, device)
 
     /** Parses an assignment ID, mapping None to None, <= 0 to Some(None), and positive IDs to Some(Some(T)). */
