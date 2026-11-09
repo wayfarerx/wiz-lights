@@ -14,13 +14,10 @@
  * limitations under the License.
  */
 
-package net.wayfarerx.wizlights
-package service
+package net.wayfarerx.wizlights.model
 
-import zio.{Scope, ZIO}
 import zio.test.*
-
-import model.*
+import zio.{Scope, ZIO}
 
 /**
  * Specifications for the Update service model.

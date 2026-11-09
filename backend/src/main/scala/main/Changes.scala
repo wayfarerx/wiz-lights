@@ -21,7 +21,6 @@ package main
 import zio.{IO, ZIO}
 
 import model.*
-import service.Update
 
 /**
  * Base trait for changes detected on a device.

@@ -17,8 +17,6 @@
 package net.wayfarerx.wizlights
 package service
 
-import scala.annotation.targetName
-
 import zio.{Scope, UIO, URIO}
 import zio.stream.UStream
 
@@ -80,7 +78,7 @@ trait Lighting:
    * @param brightness The brightness to set the light to.
    * @return True if a light was found and updated.
    */
-  @targetName("updateBrightness")
+  @annotation.targetName("updateBrightness")
   def update(macAddress: MacAddress, brightness: Brightness): UIO[Unit]
 
   /**
@@ -90,7 +88,7 @@ trait Lighting:
    * @param brightness   The brightness to set the lights to.
    * @return The number of lights found and updated.
    */
-  @targetName("updateAllBrightness")
+  @annotation.targetName("updateAllBrightness")
   def updateAll(macAddresses: Iterable[MacAddress], brightness: Brightness): UIO[Unit]
 
   /**
@@ -100,7 +98,7 @@ trait Lighting:
    * @param temperature The color temperature to set the light to.
    * @return True if a light was found and updated.
    */
-  @targetName("updateTemperature")
+  @annotation.targetName("updateTemperature")
   def update(macAddress: MacAddress, temperature: Temperature): UIO[Unit]
 
   /**
@@ -110,7 +108,7 @@ trait Lighting:
    * @param temperature  The color temperature to set the lights to.
    * @return The number of lights found and updated.
    */
-  @targetName("updateAllTemperature")
+  @annotation.targetName("updateAllTemperature")
   def updateAll(macAddresses: Iterable[MacAddress], temperature: Temperature): UIO[Unit]
 
   /**
@@ -176,7 +174,7 @@ trait Lighting:
    * @param speed      The speed to set the dynamic scene to.
    * @return True if a light was found and updated.
    */
-  @targetName("updateSpeed")
+  @annotation.targetName("updateSpeed")
   def update(macAddress: MacAddress, speed: Speed): UIO[Unit]
 
   /**
@@ -186,7 +184,7 @@ trait Lighting:
    * @param speed        The speed to set the dynamic scene to.
    * @return The number of lights found and updated.
    */
-  @targetName("updateAllSpeed")
+  @annotation.targetName("updateAllSpeed")
   def updateAll(macAddresses: Iterable[MacAddress], speed: Speed): UIO[Unit]
 
   /**

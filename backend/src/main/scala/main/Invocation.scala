@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import zio.{Fiber, Ref, UIO, ZIO}
 import model.*
-import service.Update
 
 /**
  * An invocation that tracks the target device's response.

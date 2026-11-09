@@ -15,7 +15,7 @@
  */
 
 package net.wayfarerx.wizlights
-package service
+package model
 
 /**
  * An event that can be applied to one or more lights.
