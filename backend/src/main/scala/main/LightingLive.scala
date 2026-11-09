@@ -555,13 +555,21 @@ final class LightingLive private(
     now <- currentTime
     cutoff = now - (registrationTtl.toMillis * 0.45).toLong
     devs <- devices.get
-    unregisteredTargets = if force then targets else targets.filter { mac =>
-      devs.get(mac).fold(true) { state =>
-        val expired = state.registration.fold(true)(_ <= cutoff)
-        val ipChanged = state.inetAddress.isDefined && state.registeredIp != state.inetAddress
-        expired || ipChanged
+    unregisteredTargets <- if force then ZIO.succeed(targets) else
+      ZIO.filter(targets) { mac =>
+        devs.get(mac).fold(ZIO.succeed(true)) { state =>
+          val expired = state.registration.fold(true)(_ <= cutoff)
+          val ipChanged = state.inetAddress.isDefined && state.registeredIp != state.inetAddress
+          if expired || ipChanged then ZIO.succeed(true)
+          else
+            state.inetAddress.fold(ZIO.succeed(false)) { targetIp =>
+              network.localhost(targetIp).map {
+                case Some((_, localIp)) => state.registeredLocalIp.exists(_ != localIp)
+                case None => false
+              }
+            }
+        }
       }
-    }
     _ <- if unregisteredTargets.isEmpty then ZIO.unit else request match
       case Some(req) =>
         invoke(unregisteredTargets)(req)
@@ -803,10 +811,12 @@ final class LightingLive private(
   ): UIO[Unit] = for
     macAddress <- resolve(inetAddress, id)
     now <- currentTime
+    localHost <- network.localhost(inetAddress)
+    localIp = localHost.map(_._2)
     _ <- macAddress.fold(ZIO.unit) { macAddress =>
       completeInvocation(id, macAddress, now).flatMap {
         case Some((_, timestamp)) =>
-          if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, timestamp), None)
+          if payload.success then applyChanges(inetAddress, Changes.Registered(macAddress, timestamp, localIp), None)
           else touch(macAddress) *> ZIO.logWarning(s"A registration request failed for $macAddress.")
         case None =>
           touch(macAddress)

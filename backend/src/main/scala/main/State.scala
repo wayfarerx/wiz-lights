@@ -65,6 +65,7 @@ private case class State(
   device: Option[Device] = None,
   registration: Option[Long] = None,
   registeredIp: Option[InetAddress] = None,
+  registeredLocalIp: Option[String] = None,
   lastSeen: Option[Long] = None,
   updatedAt: Option[Long] = None,
   settingsUpdatedAt: Option[Long] = None,
@@ -142,6 +143,7 @@ private case class State(
       inetAddress = Some(inetAddress),
       registration = Some(registration.fold(changes.timestamp)(Math.max(_, changes.timestamp))),
       registeredIp = Some(inetAddress),
+      registeredLocalIp = changes.localIp.orElse(registeredLocalIp),
       lastSeen = Some(lastSeen.fold(changes.timestamp)(Math.max(_, changes.timestamp)))
     )
 

@@ -44,10 +44,12 @@ private object Changes:
    *
    * @param macAddress The MAC address of the device.
    * @param timestamp  The timestamp when the registration was observed.
+   * @param localIp    The optional controller IP registered with the device.
    */
   case class Registered(
     macAddress: MacAddress,
-    timestamp: Long
+    timestamp: Long,
+    localIp: Option[String] = None
   ) extends Changes
 
   /**
