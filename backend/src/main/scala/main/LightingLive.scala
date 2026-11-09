@@ -459,12 +459,8 @@ final class LightingLive private(
                   invocations.remove(invocation.id).ignore *>
                     ZIO.logWarning(s"Request timed out for $target: $request.") *> {
                       if invocation.hasUpdate then
-                        devices.modify(_.disconnect(target)).flatMap {
-                          case Some(newState) =>
-                            events.publish(newState.toLight -> None).ignore
-                          case None =>
-                            ZIO.unit
-                        } *> invoke(target :: Nil)(GetPilotRequest())
+                        devices.modify(devs => () -> devs.clearAuthoritative(target)) *>
+                          invoke(target :: Nil)(GetPilotRequest())
                       else ZIO.unit
                     }
             }
