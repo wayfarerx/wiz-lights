@@ -355,15 +355,15 @@ final class LightingLive private(
    * Cancels active invocations targeting the specified devices.
    *
    * @param targets The target MAC addresses to cancel active invocations for.
-   * @param method  The optional method to match; if None, cancels invocations with updates.
+   * @param filter  The optional filter to match invocations; if None, cancels all matching invocations.
    */
-  private def cancelInvocations(targets: Set[MacAddress], method: Option[String] = None): UIO[Unit] = for
+  private def cancelInvocations(
+    targets: Set[MacAddress],
+    filter: Option[Invocation => Boolean] = None
+  ): UIO[Unit] = for
     active <- invocations.toList
     _ <- ZIO.foreachDiscard(active) { case (id, inv) =>
-      val matches = method match
-        case Some(m) => inv.method.contains(m)
-        case None => inv.hasUpdate
-      if matches then
+      if filter.forall(_(inv)) then
         inv.target.flatMap {
           case Some(mac) if targets.contains(mac) =>
             inv.cancel *> invocations.remove(id).ignore
@@ -384,7 +384,7 @@ final class LightingLive private(
   private def invoke(targets: Iterable[MacAddress], update: Option[Update] = None)(request: Request): UIO[Unit] = for
     now <- currentTime
     knownIps <- if update.isDefined then lookup(targets) else ZIO.succeed(Map.empty)
-    _ <- update.fold(cancelInvocations(targets.toSet, Some(request.method))) { upd =>
+    _ <- update.fold(cancelInvocations(targets.toSet, Some(_.method.contains(request.method)))) { upd =>
       cancelInvocations(targets.toSet) *> ZIO.foreachParDiscard(targets) { target =>
         knownIps.get(target).fold(ZIO.unit) { ip =>
           applyChanges(ip, Changes.Updates(target, now, upd), Some(Source.Udp)).unit
@@ -714,7 +714,9 @@ final class LightingLive private(
     _ <- changes.fold(ZIO.unit) { changes =>
       val macAddresses = changes.macAddress :: Nil
       for
-        _ <- if changes.source.exists(s => s != Source.Udp) then cancelInvocations(macAddresses.toSet) else ZIO.unit
+        _ <- if changes.source.exists(s => s != Source.Udp) then
+          cancelInvocations(macAddresses.toSet, Some(_.hasUpdate))
+        else ZIO.unit
         newDevice <- applyChanges(inetAddress, changes, changes.source)
         _ <- if newDevice.settingsUpdatedAt.isEmpty then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
         _ <- registerWith(macAddresses)
