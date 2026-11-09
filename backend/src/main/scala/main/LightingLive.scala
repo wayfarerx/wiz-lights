@@ -650,7 +650,7 @@ final class LightingLive private(
       for
         _ <- cancelInvocations(macAddresses.toSet)
         _ <- devices.modify(devs => () -> devs.unregister(changes.macAddress).clearAuthoritative(changes.macAddress))
-        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat))
+        newDevice <- applyChanges(inetAddress, changes, Some(Source.Heartbeat), publish = false)
         _ <- registerWith(macAddresses, force = true)
         _ <- invoke(macAddresses)(GetPilotRequest())
         _ <- if shouldRefreshSettings(newDevice, now) then invoke(macAddresses)(GetSystemConfigRequest()) else ZIO.unit
@@ -862,17 +862,19 @@ final class LightingLive private(
    * @param inetAddress The internet address of the device in question.
    * @param changes     The changes to apply to the device state.
    * @param source      The optional source of the event that generated the changes.
+   * @param publish     True to publish light events if the state changed.
    * @return The old and new states of the device in question.
    */
   private def applyChanges(
     inetAddress: InetAddress,
     changes: Changes,
-    source: Option[Source]
+    source: Option[Source],
+    publish: Boolean = true
   ): UIO[State] = for
     (oldState, newState) <- devices.modify(_.applyChanges(inetAddress, changes))
     _ <-
       val newLight = newState.toLight
-      if newLight != oldState.toLight then events.publish(newLight -> source).ignore
+      if publish && newLight != oldState.toLight then events.publish(newLight -> source).ignore
       else ZIO.unit
   yield newState
 
