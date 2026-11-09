@@ -187,65 +187,8 @@ final class LightingLive private(
     updateAll(List(macAddress), update)
 
   /* Update the lights at the specified MAC addresses using the specified update. */
-  override def updateAll(macAddresses: Iterable[MacAddress], update: Update): UIO[Unit] = update match
-    case Update.Enabled(enabled) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(enabled)))
-    case Update.Brightness(brightness) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), dimming = Some(brightness)))
-    case Update.Temperature(temperature) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), temp = Some(temperature)))
-    case Update.Color(color) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(
-        state = Some(true),
-        r = Some(color.red),
-        g = Some(color.green),
-        b = Some(color.blue),
-        c = Some(color.cool),
-        w = Some(color.warm)
-      ))
-    case Update.Scene(scene) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), sceneId = Some(scene.id)))
-    case Update.Dynamic(scene, speed) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed)))
-    case Update.Speed(speed) =>
-      invoke(macAddresses, Some(update))(SetPilotRequest(speed = Some(speed)))
-    case Update.Status(status) =>
-      invoke(macAddresses, Some(update))(
-        status match
-          case Status.Disabled =>
-            SetPilotRequest(
-              state = Some(false)
-            )
-          case Status.White(temp, brightness) =>
-            SetPilotRequest(
-              state = Some(true),
-              temp = Some(temp),
-              dimming = Some(brightness)
-            )
-          case Status.Defined.Static(scene, brightness) =>
-            SetPilotRequest(
-              state = Some(true),
-              sceneId = Some(scene.id),
-              dimming = Some(brightness)
-            )
-          case Status.Defined.Dynamic(scene, speed, brightness) =>
-            SetPilotRequest(
-              state = Some(true),
-              sceneId = Some(scene.id),
-              speed = Some(speed),
-              dimming = Some(brightness)
-            )
-          case Status.Custom(color, brightness) =>
-            SetPilotRequest(
-              state = Some(true),
-              dimming = Some(brightness),
-              r = Some(color.red),
-              g = Some(color.green),
-              b = Some(color.blue),
-              c = Some(color.cool),
-              w = Some(color.warm)
-            )
-      )
+  override def updateAll(macAddresses: Iterable[MacAddress], update: Update): UIO[Unit] =
+    invoke(macAddresses, Some(update))(SetPilotRequest.from(update))
 
   /* Subscribe to events from this service. */
   override def subscribe: URIO[Scope, UStream[(Light, Option[Source])]] =

@@ -21,6 +21,8 @@ package protocol
 import io.circe.{Encoder, Json, JsonObject}
 import io.circe.generic.semiauto.deriveEncoder
 
+import model.*
+
 /**
  * Base type for requests.
  */
@@ -201,3 +203,82 @@ object SetPilotRequest:
 
   /** The set pilot request encoder. */
   given encoder: Encoder[SetPilotRequest] = Request.encoding(SetPilotMethod, deriveEncoder)
+
+  /**
+   * Creates a set pilot request from a domain status.
+   *
+   * @param status The status to set.
+   * @return A set pilot request matching the status.
+   */
+  def from(status: Status): SetPilotRequest =
+    from(status, None)
+
+  /**
+   * Creates a set pilot request from a domain status.
+   *
+   * @param status The status to set.
+   * @param id     The optional correlation ID.
+   * @return A set pilot request matching the status.
+   */
+  def from(status: Status, id: Option[Int]): SetPilotRequest = status match
+    case Status.Disabled =>
+      SetPilotRequest(state = Some(false), id = id)
+    case Status.White(temp, brightness) =>
+      SetPilotRequest(state = Some(true), temp = Some(temp), dimming = Some(brightness), id = id)
+    case Status.Defined.Static(scene, brightness) =>
+      SetPilotRequest(state = Some(true), sceneId = Some(scene.id), dimming = Some(brightness), id = id)
+    case Status.Defined.Dynamic(scene, speed, brightness) =>
+      SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed), dimming = Some(brightness), id = id)
+    case Status.Custom(color, brightness) =>
+      SetPilotRequest(
+        state = Some(true),
+        dimming = Some(brightness),
+        r = Some(color.red),
+        g = Some(color.green),
+        b = Some(color.blue),
+        c = Some(color.cool),
+        w = Some(color.warm),
+        id = id
+      )
+
+  /**
+   * Creates a set pilot request from a domain update.
+   *
+   * @param update The update to apply.
+   * @return A set pilot request representing the update.
+   */
+  def from(update: Update): SetPilotRequest =
+    from(update, None)
+
+  /**
+   * Creates a set pilot request from a domain update.
+   *
+   * @param update The update to apply.
+   * @param id     The optional correlation ID.
+   * @return A set pilot request representing the update.
+   */
+  def from(update: Update, id: Option[Int]): SetPilotRequest = update match
+    case Update.Enabled(enabled) =>
+      SetPilotRequest(state = Some(enabled), id = id)
+    case Update.Brightness(brightness) =>
+      SetPilotRequest(state = Some(true), dimming = Some(brightness), id = id)
+    case Update.Temperature(temperature) =>
+      SetPilotRequest(state = Some(true), temp = Some(temperature), id = id)
+    case Update.Color(color) =>
+      SetPilotRequest(
+        state = Some(true),
+        r = Some(color.red),
+        g = Some(color.green),
+        b = Some(color.blue),
+        c = Some(color.cool),
+        w = Some(color.warm),
+        id = id
+      )
+    case Update.Scene(scene) =>
+      SetPilotRequest(state = Some(true), sceneId = Some(scene.id), id = id)
+    case Update.Dynamic(scene, speed) =>
+      SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed), id = id)
+    case Update.Speed(speed) =>
+      SetPilotRequest(speed = Some(speed), id = id)
+    case Update.Status(status) =>
+      from(status, id)

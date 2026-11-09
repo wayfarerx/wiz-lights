@@ -24,6 +24,8 @@ import io.circe.syntax.*
 import zio.Scope
 import zio.test.*
 
+import model.*
+
 /**
  * Specifications for the Request protocol models.
  */
@@ -199,6 +201,29 @@ object RequestSpec extends ZIOSpecDefault:
         completeRequest.id.contains(42),
         completeRequest.asJson == expectedCompleteJson,
         (completeRequest: Request).asJson == expectedCompleteJson
+      )
+    },
+    test("create SetPilotRequest from Status and Update") {
+      val disabled = Status.Disabled
+      val white = Status.White(Temperature.Warmest, Brightness.Brightest)
+      val staticScene = Status.Defined.Static(Scene.Static.Cozy, Brightness.Medium)
+      val dynamicScene = Status.Defined.Dynamic(Scene.Dynamic.Party, Speed.Fastest, Brightness.Dimmest)
+      val custom = Status.Custom(Color.Red, Brightness.Brightest)
+
+      assertTrue(
+        SetPilotRequest.from(disabled) == SetPilotRequest(state = Some(false)),
+        SetPilotRequest.from(white) == SetPilotRequest(state = Some(true), temp = Some(Temperature.Warmest), dimming = Some(Brightness.Brightest)),
+        SetPilotRequest.from(staticScene) == SetPilotRequest(state = Some(true), sceneId = Some(Scene.Static.Cozy.id), dimming = Some(Brightness.Medium)),
+        SetPilotRequest.from(dynamicScene) == SetPilotRequest(state = Some(true), sceneId = Some(Scene.Dynamic.Party.id), speed = Some(Speed.Fastest), dimming = Some(Brightness.Dimmest)),
+        SetPilotRequest.from(custom) == SetPilotRequest(state = Some(true), dimming = Some(Brightness.Brightest), r = Some(255), g = Some(0), b = Some(0), c = Some(0), w = Some(0)),
+        SetPilotRequest.from(Update.Enabled(true)) == SetPilotRequest(state = Some(true)),
+        SetPilotRequest.from(Update.Brightness(Brightness.Medium)) == SetPilotRequest(state = Some(true), dimming = Some(Brightness.Medium)),
+        SetPilotRequest.from(Update.Temperature(Temperature.Coolest)) == SetPilotRequest(state = Some(true), temp = Some(Temperature.Coolest)),
+        SetPilotRequest.from(Update.Color(Color.Blue)) == SetPilotRequest(state = Some(true), r = Some(0), g = Some(0), b = Some(255), c = Some(0), w = Some(0)),
+        SetPilotRequest.from(Update.Scene(Scene.Static.NightLight)) == SetPilotRequest(state = Some(true), sceneId = Some(Scene.Static.NightLight.id)),
+        SetPilotRequest.from(Update.Dynamic(Scene.Dynamic.Ocean, Speed.Medium)) == SetPilotRequest(state = Some(true), sceneId = Some(Scene.Dynamic.Ocean.id), speed = Some(Speed.Medium)),
+        SetPilotRequest.from(Update.Speed(Speed.Slowest)) == SetPilotRequest(speed = Some(Speed.Slowest)),
+        SetPilotRequest.from(Update.Status(white)) == SetPilotRequest(state = Some(true), temp = Some(Temperature.Warmest), dimming = Some(Brightness.Brightest))
       )
     }
   )
