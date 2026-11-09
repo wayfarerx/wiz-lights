@@ -484,7 +484,9 @@ final class LightingLive private(
       case Some(target) =>
         lookup(target :: Nil).flatMap { targets =>
           if targets.isEmpty then
-            ZIO.logWarning(s"Unable to resolve IP address for $target.") *> invocations.remove(invocation.id).ignore
+            network.publish(Outgoing.Broadcast(GetPilotRequest())) *>
+              ZIO.logWarning(s"Unable to resolve IP address for $target; broadcasting discovery.") *>
+              invocations.remove(invocation.id).ignore
           else
             network.publish(Outgoing.Send(targets.values.toSet, request)) *> {
               backoffs match
