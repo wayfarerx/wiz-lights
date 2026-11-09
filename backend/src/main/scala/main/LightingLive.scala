@@ -874,9 +874,7 @@ object LightingLive:
     _ <- network.subscribe.flatMap { stream =>
       stream
         .mapZIO(message => service.targetKey(message).map(_ -> message))
-        .groupByKey(_._1, 16) { (_, group) =>
-          group.mapZIO(pair => service.onMessage(pair._2))
-        }
+        .groupByKey(_._1, 16)((_, group) => group.mapZIO(pair => service.onMessage(pair._2)), buffer = 256)
         .runDrain
         .forkScoped
     }
