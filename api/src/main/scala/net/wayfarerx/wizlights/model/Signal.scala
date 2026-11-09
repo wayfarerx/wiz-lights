@@ -89,7 +89,7 @@ object Signal:
    * @return The signal strength enumeration value if the value is valid.
    */
   def make(value: Int): IO[IllegalArgumentException, Signal] =
-    ZIO.fromEither(from(value)).mapError(IllegalArgumentException(_))
+    ZIO.succeed(from(value).toOption.get)
 
   /**
    * Creates a light signal strength definition from a name.

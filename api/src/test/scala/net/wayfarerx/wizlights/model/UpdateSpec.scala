@@ -16,6 +16,8 @@
 
 package net.wayfarerx.wizlights.model
 
+import io.circe.{Decoder, Encoder, Json}
+
 import zio.test.*
 import zio.{Scope, ZIO}
 
@@ -65,6 +67,75 @@ object UpdateSpec extends ZIOSpecDefault:
           "speed:100",
           s"status:$status"
         )
+      )
+    },
+    test("encode and decode all Update variations as JSON") {
+      for
+        bright <- Brightness.make(50)
+        temp <- Temperature.make(3000)
+        col <- Color.make(255, 0, 0)
+        spd <- Speed.make(100)
+        staticScene = Scene.Static.Cozy
+        dynamicScene = Scene.Dynamic.Sunset
+        status = Status.White(temp, bright)
+        upEnabled = Update.Enabled(true)
+        upBrightness = Update.Brightness(bright)
+        upTemp = Update.Temperature(temp)
+        upColor = Update.Color(col)
+        upScene = Update.Scene(staticScene)
+        upDyn = Update.Dynamic(dynamicScene, spd)
+        upSpeed = Update.Speed(spd)
+        upStatus = Update.Status(status)
+      yield
+        val encEnabled = Encoder[Update].apply(upEnabled)
+        val encBrightness = Encoder[Update].apply(upBrightness)
+        val encTemp = Encoder[Update].apply(upTemp)
+        val encColor = Encoder[Update].apply(upColor)
+        val encScene = Encoder[Update].apply(upScene)
+        val encDyn = Encoder[Update].apply(upDyn)
+        val encSpeed = Encoder[Update].apply(upSpeed)
+        val encStatus = Encoder[Update].apply(upStatus)
+
+        assertTrue(
+          encEnabled == Json.obj("enabled" -> Json.fromBoolean(true)),
+          encBrightness == Json.obj("brightness" -> Json.fromInt(50)),
+          encTemp == Json.obj("temperature" -> Json.fromInt(3000)),
+          encColor == Json.obj("color" -> Json.obj("red" -> Json.fromInt(255), "green" -> Json.fromInt(0), "blue" -> Json.fromInt(0))),
+          encScene == Json.obj("scene" -> Json.fromInt(6)),
+          encDyn == Json.obj("scene" -> Json.fromInt(3), "speed" -> Json.fromInt(100)),
+          encSpeed == Json.obj("speed" -> Json.fromInt(100)),
+          encStatus == Json.obj("status" -> Json.obj("temperature" -> Json.fromInt(3000), "brightness" -> Json.fromInt(50))),
+          Decoder[Update].decodeJson(encEnabled) == Right(upEnabled),
+          Decoder[Update.Enabled].decodeJson(encEnabled) == Right(upEnabled),
+          Decoder[Update].decodeJson(encBrightness) == Right(upBrightness),
+          Decoder[Update.Brightness].decodeJson(encBrightness) == Right(upBrightness),
+          Decoder[Update].decodeJson(encTemp) == Right(upTemp),
+          Decoder[Update.Temperature].decodeJson(encTemp) == Right(upTemp),
+          Decoder[Update].decodeJson(encColor) == Right(upColor),
+          Decoder[Update.Color].decodeJson(encColor) == Right(upColor),
+          Decoder[Update].decodeJson(encScene) == Right(upScene),
+          Decoder[Update.Scene].decodeJson(encScene) == Right(upScene),
+          Decoder[Update].decodeJson(encDyn) == Right(upDyn),
+          Decoder[Update.Dynamic].decodeJson(encDyn) == Right(upDyn),
+          Decoder[Update].decodeJson(encSpeed) == Right(upSpeed),
+          Decoder[Update.Speed].decodeJson(encSpeed) == Right(upSpeed),
+          Decoder[Update].decodeJson(encStatus) == Right(upStatus),
+          Decoder[Update.Status].decodeJson(encStatus) == Right(upStatus),
+          Decoder[Update].decodeAccumulating(encEnabled.hcursor).isValid
+        )
+    },
+    test("reject invalid JSON for Update") {
+      val nonObject = Json.fromString("enabled")
+      val emptyObj = Json.obj()
+      val unknownObj = Json.obj("unknown" -> Json.fromInt(1))
+      val invalidBright = Json.obj("brightness" -> Json.fromInt(5))
+      assertTrue(
+        Decoder[Update].decodeJson(nonObject).isLeft,
+        Decoder[Update].decodeJson(emptyObj).isLeft,
+        Decoder[Update].decodeJson(unknownObj).isLeft,
+        Decoder[Update].decodeJson(invalidBright).isLeft,
+        Decoder[Update].decodeAccumulating(nonObject.hcursor).isInvalid,
+        Decoder[Update].decodeAccumulating(emptyObj.hcursor).isInvalid
       )
     }
   )

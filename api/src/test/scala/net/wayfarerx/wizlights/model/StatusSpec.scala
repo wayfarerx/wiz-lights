@@ -127,7 +127,10 @@ object StatusSpec extends ZIOSpecDefault:
         Decoder[Status].decodeJson(nonObject).isLeft,
         Decoder[Status].decodeJson(missingDiscrim).isLeft,
         Decoder[Status].decodeJson(invalidTemp).isLeft,
-        Decoder[Status.Enabled].decodeJson(missingDiscrim).isLeft
+        Decoder[Status.Enabled].decodeJson(missingDiscrim).isLeft,
+        Decoder[Status].decodeAccumulating(nonObject.hcursor).isInvalid,
+        Decoder[Status].decodeAccumulating(missingDiscrim.hcursor).isInvalid,
+        Decoder[Status.Enabled].decodeAccumulating(missingDiscrim.hcursor).isInvalid
       )
     }
   )

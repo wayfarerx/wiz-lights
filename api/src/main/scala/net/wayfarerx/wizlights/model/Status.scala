@@ -39,44 +39,48 @@ object Status:
   }
 
   /** The circe decoder for light statuses. */
-  given Decoder[Status] = accumulating(new Decoder[Status]:
-
-    override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, Status] =
-      cursor.value.asObject match
-        case Some(obj) if obj.isEmpty =>
-          Validated.valid(Disabled)
-        case Some(_) =>
-          Decoder[Enabled].decodeAccumulating(cursor)
-        case None =>
-          Validated.invalidNel(DecodingFailure(
-            DecodingFailure.Reason.CustomReason("Expected a JSON object for Status."),
-            cursor
-          ))
-
-    override def apply(cursor: HCursor): Decoder.Result[Status] =
-      decodeAccumulating(cursor).toEither.left.map(_.head)
-
-  )
+  given Decoder[Status] = accumulate { cursor =>
+    cursor.value.asObject match
+      case Some(obj) if obj.isEmpty =>
+        Validated.valid(Disabled)
+      case Some(_) =>
+        Decoder[Enabled].decodeAccumulating(cursor)
+      case None =>
+        Validated.invalidNel(DecodingFailure(
+          DecodingFailure.Reason.CustomReason("Expected a JSON object for Status."),
+          cursor
+        ))
+  }
 
   /**
    * Helper that creates an error-accumulating decoder that also joins all error messages on apply.
    *
    * @tparam T The type being decoded.
-   * @param decoder The underlying decoder.
+   * @param decode The decoding function.
    * @return The error-accumulating decoder.
    */
-  private def accumulating[T](decoder: Decoder[T]): Decoder[T] = new Decoder[T]:
+  private def accumulate[T](decode: HCursor => ValidatedNel[DecodingFailure, T]): Decoder[T] = new Decoder[T]:
 
     override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, T] =
-      decoder.decodeAccumulating(cursor)
+      decode(cursor)
 
     override def apply(cursor: HCursor): Decoder.Result[T] =
-      decoder.decodeAccumulating(cursor).toEither.left.map { failures =>
+      decode(cursor).toEither.left.map { failures =>
         DecodingFailure(
           DecodingFailure.Reason.CustomReason(failures.map(_.message).toList.mkString(" ")),
           cursor
         )
       }
+
+  /**
+   * Helper that adapts an existing decoder to join error messages on apply.
+   *
+   * @tparam T The type being decoded.
+   * @param decoder The underlying decoder.
+   * @return The error-accumulating decoder.
+   */
+  private def accumulating[T](decoder: Decoder[T]): Decoder[T] =
+    accumulate(decoder.decodeAccumulating)
 
   /**
    * The light is disabled.
@@ -127,27 +131,21 @@ object Status:
     }
 
     /** The circe decoder for enabled light statuses. */
-    given Decoder[Enabled] = accumulating(new Decoder[Enabled]:
-
-      override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, Enabled] =
-        if cursor.downField("temperature").focus.isDefined then
-          Decoder[White].decodeAccumulating(cursor)
-        else if cursor.downField("color").focus.isDefined then
-          Decoder[Custom].decodeAccumulating(cursor)
-        else if cursor.downField("scene").focus.isDefined then
-          Decoder[Defined].decodeAccumulating(cursor)
-        else
-          Validated.invalidNel(DecodingFailure(
-            DecodingFailure.Reason.CustomReason(
-              "Enabled status must specify one of: 'temperature', 'color', or 'scene'."
-            ),
-            cursor
-          ))
-
-      override def apply(cursor: HCursor): Decoder.Result[Enabled] =
-        decodeAccumulating(cursor).toEither.left.map(_.head)
-
-    )
+    given Decoder[Enabled] = accumulate { cursor =>
+      if cursor.downField("temperature").focus.isDefined then
+        Decoder[White].decodeAccumulating(cursor)
+      else if cursor.downField("color").focus.isDefined then
+        Decoder[Custom].decodeAccumulating(cursor)
+      else if cursor.downField("scene").focus.isDefined then
+        Decoder[Defined].decodeAccumulating(cursor)
+      else
+        Validated.invalidNel(DecodingFailure(
+          DecodingFailure.Reason.CustomReason(
+            "Enabled status must specify one of: 'temperature', 'color', or 'scene'."
+          ),
+          cursor
+        ))
+    }
 
   /**
    * The light is set to pure white.
@@ -202,18 +200,12 @@ object Status:
     }
 
     /** The circe decoder for defined statuses. */
-    given Decoder[Defined] = accumulating(new Decoder[Defined]:
-
-      override def decodeAccumulating(cursor: HCursor): ValidatedNel[DecodingFailure, Defined] =
-        if cursor.downField("speed").focus.isDefined then
-          Decoder[Dynamic].decodeAccumulating(cursor)
-        else
-          Decoder[Static].decodeAccumulating(cursor)
-
-      override def apply(cursor: HCursor): Decoder.Result[Defined] =
-        decodeAccumulating(cursor).toEither.left.map(_.head)
-
-    )
+    given Decoder[Defined] = accumulate { cursor =>
+      if cursor.downField("speed").focus.isDefined then
+        Decoder[Dynamic].decodeAccumulating(cursor)
+      else
+        Decoder[Static].decodeAccumulating(cursor)
+    }
 
     /**
      * The light is set to a static scene.

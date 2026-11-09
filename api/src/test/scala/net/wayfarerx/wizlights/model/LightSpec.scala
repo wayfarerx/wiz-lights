@@ -103,7 +103,8 @@ object LightSpec extends ZIOSpecDefault:
         decodedMin == Right(lightMinimal),
         decodedFull == Right(lightFull),
         missingMac.isLeft,
-        invalidMac.isLeft
+        invalidMac.isLeft,
+        Decoder[Light].decodeAccumulating(encodedMin.hcursor).isValid
       )
     }
   )
