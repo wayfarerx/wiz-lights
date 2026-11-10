@@ -46,6 +46,9 @@ object RequestSpec extends ZIOSpecDefault:
       )
       assertTrue(
         request.id.isEmpty,
+        request.method == GetPilotMethod,
+        request.withId(Some(99)) == GetPilotRequest(Some(99)),
+        requestWithId.withId(None) == GetPilotRequest(None),
         requestWithId.id.contains(42),
         request.asJson == expectedJson,
         (request: Request).asJson == expectedJson,
@@ -67,6 +70,9 @@ object RequestSpec extends ZIOSpecDefault:
       )
       assertTrue(
         request.id.isEmpty,
+        request.method == GetSystemConfigMethod,
+        request.withId(Some(99)) == GetSystemConfigRequest(Some(99)),
+        requestWithId.withId(None) == GetSystemConfigRequest(None),
         requestWithId.id.contains(42),
         request.asJson == expectedJson,
         (request: Request).asJson == expectedJson,
@@ -75,7 +81,7 @@ object RequestSpec extends ZIOSpecDefault:
       )
     },
     test("encode RegistrationRequest to JSON") {
-      val registrationRequest = RegistrationRequest("0123456789ab", "192.168.1.100", true)
+      val registrationRequest = RegistrationRequest("0123456789ab", "192.168.1.100")
       val deregistrationRequest = RegistrationRequest("0123456789ab", "192.168.1.100", false)
       val defaultRegistrationRequest = RegistrationRequest("0123456789ab", "192.168.1.100")
       val registrationRequestWithId = RegistrationRequest("0123456789ab", "192.168.1.100", true, Some(42))
@@ -107,6 +113,9 @@ object RequestSpec extends ZIOSpecDefault:
       )
 
       assertTrue(
+        registrationRequest.method == RegistrationMethod,
+        registrationRequest.withId(Some(99)) == RegistrationRequest("0123456789ab", "192.168.1.100", true, Some(99)),
+        registrationRequestWithId.withId(None) == RegistrationRequest("0123456789ab", "192.168.1.100", true, None),
         registrationRequest.phoneMac == "0123456789ab",
         registrationRequest.phoneIp == "192.168.1.100",
         registrationRequest.register,
@@ -172,6 +181,9 @@ object RequestSpec extends ZIOSpecDefault:
 
       assertTrue(
         stateOnlyRequest.id.isEmpty,
+        stateOnlyRequest.method == SetPilotMethod,
+        stateOnlyRequest.withId(Some(99)) == SetPilotRequest(state = Some(true), id = Some(99)),
+        idRequest.withId(None) == SetPilotRequest(state = Some(true), id = None),
         stateOnlyRequest.asJson == expectedStateOnlyJson,
         (stateOnlyRequest: Request).asJson == expectedStateOnlyJson,
         brightnessRequest.asJson == expectedBrightnessJson,

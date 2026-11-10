@@ -379,5 +379,82 @@ object ResponseSpec extends ZIOSpecDefault:
           "Only one of the \"result\" key or the \"error\" key may be present."
         )
       )
+    },
+    test("construct responses and payloads with default parameters") {
+      val errorPayload = ErrorResponsePayload(Some(1), Some("test"))
+      val errorResponse = ErrorResponse(errorPayload)
+      val fbPayload = FirstBeatResponsePayload("0123456789ab")
+      val fbResponse = FirstBeatResponse(Left(errorPayload))
+      val gpPayload = GetPilotResponsePayload("0123456789ab", -50, true)
+      val gpResponse = GetPilotResponse(Left(errorPayload))
+      val gscPayload = GetSystemConfigResponsePayload("0123456789ab")
+      val gscResponse = GetSystemConfigResponse(Left(errorPayload))
+      val regPayload = RegistrationResponsePayload(true)
+      val regResponse = RegistrationResponse(Left(errorPayload))
+      val spPayload = SetPilotResponsePayload(true)
+      val spResponse = SetPilotResponse(Left(errorPayload))
+      val syncPayload = SyncPilotResponsePayload("0123456789ab", -50, true)
+      val syncResponse = SyncPilotResponse(Left(errorPayload))
+
+      assertTrue(
+        errorResponse.id.isEmpty,
+        errorResponse.method.isEmpty,
+        errorResponse.payload == Left(errorPayload),
+        fbResponse.id.isEmpty,
+        fbPayload.mac == "0123456789ab",
+        fbPayload.homeId.isEmpty,
+        fbPayload.roomId.isEmpty,
+        fbPayload.rgn.isEmpty,
+        fbPayload.moduleName.isEmpty,
+        fbPayload.fwVersion.isEmpty,
+        fbPayload.groupId.isEmpty,
+        fbPayload.typeId.isEmpty,
+        fbPayload.homeLock.isEmpty,
+        fbPayload.pairingLock.isEmpty,
+        fbPayload.ping.isEmpty,
+        gpResponse.id.isEmpty,
+        gpPayload.mac == "0123456789ab",
+        gpPayload.rssi == -50,
+        gpPayload.state,
+        gpPayload.dimming.isEmpty,
+        gpPayload.sceneId.isEmpty,
+        gpPayload.speed.isEmpty,
+        gpPayload.temp.isEmpty,
+        gpPayload.r.isEmpty,
+        gpPayload.g.isEmpty,
+        gpPayload.b.isEmpty,
+        gpPayload.c.isEmpty,
+        gpPayload.w.isEmpty,
+        gscResponse.id.isEmpty,
+        gscPayload.mac == "0123456789ab",
+        gscPayload.homeId.isEmpty,
+        gscPayload.roomId.isEmpty,
+        gscPayload.rgn.isEmpty,
+        gscPayload.moduleName.isEmpty,
+        gscPayload.fwVersion.isEmpty,
+        gscPayload.groupId.isEmpty,
+        gscPayload.typeId.isEmpty,
+        gscPayload.homeLock.isEmpty,
+        gscPayload.pairingLock.isEmpty,
+        gscPayload.ping.isEmpty,
+        regResponse.id.isEmpty,
+        regPayload.success,
+        spResponse.id.isEmpty,
+        spPayload.success,
+        syncResponse.id.isEmpty,
+        syncPayload.mac == "0123456789ab",
+        syncPayload.rssi == -50,
+        syncPayload.state,
+        syncPayload.src.isEmpty,
+        syncPayload.dimming.isEmpty,
+        syncPayload.sceneId.isEmpty,
+        syncPayload.speed.isEmpty,
+        syncPayload.temp.isEmpty,
+        syncPayload.r.isEmpty,
+        syncPayload.g.isEmpty,
+        syncPayload.b.isEmpty,
+        syncPayload.c.isEmpty,
+        syncPayload.w.isEmpty
+      )
     }
   )
