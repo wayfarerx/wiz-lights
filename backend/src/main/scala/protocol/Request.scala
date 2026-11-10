@@ -54,10 +54,10 @@ object Request:
   
   /** The generic request encoder. */
   given Encoder[Request] = Encoder.instance {
-    case request: GetPilotRequest => GetPilotRequest.encoder(request)
-    case request: GetSystemConfigRequest => GetSystemConfigRequest.encoder(request)
-    case request: RegistrationRequest => RegistrationRequest.encoder(request)
-    case request: SetPilotRequest => SetPilotRequest.encoder(request)
+    case request: GetPilotRequest => summon[Encoder[GetPilotRequest]](request)
+    case request: GetSystemConfigRequest => summon[Encoder[GetSystemConfigRequest]](request)
+    case request: RegistrationRequest => summon[Encoder[RegistrationRequest]](request)
+    case request: SetPilotRequest => summon[Encoder[SetPilotRequest]](request)
   }
 
   /**
@@ -69,12 +69,11 @@ object Request:
    * @return The request encoder wrapped in the protocol envelope.
    */
   private[protocol] def encoding[T <: Request](method: String, encoder: Encoder[T]): Encoder[T] =
-    val jsonMethod = Some(MethodKey -> Json.fromString(method))
     encoder.mapJson {
       _.mapObject { json =>
         JsonObject(Seq(
           json(IdKey).map(IdKey -> _),
-          jsonMethod,
+          Some(MethodKey -> Json.fromString(method)),
           Some(ParamsKey -> json.remove(IdKey).toJson.dropNullValues)
         ).flatten *)
       }.dropNullValues
@@ -102,7 +101,7 @@ case class GetPilotRequest(id: Option[Int] = None) extends Request:
 object GetPilotRequest:
 
   /** The get pilot request encoder. */
-  given encoder: Encoder[GetPilotRequest] = Request.encoding(GetPilotMethod, deriveEncoder)
+  given Encoder[GetPilotRequest] = Request.encoding(GetPilotMethod, deriveEncoder)
 
 /**
  * The get system config request.
@@ -126,7 +125,7 @@ case class GetSystemConfigRequest(id: Option[Int] = None) extends Request:
 object GetSystemConfigRequest:
 
   /** The get system config request encoder. */
-  given encoder: Encoder[GetSystemConfigRequest] = Request.encoding(GetSystemConfigMethod, deriveEncoder)
+  given Encoder[GetSystemConfigRequest] = Request.encoding(GetSystemConfigMethod, deriveEncoder)
 
 /**
  * The registration request.
@@ -158,7 +157,7 @@ case class RegistrationRequest(
 object RegistrationRequest:
 
   /** The registration request encoder. */
-  given encoder: Encoder[RegistrationRequest] = Request.encoding(RegistrationMethod, deriveEncoder)
+  given Encoder[RegistrationRequest] = Request.encoding(RegistrationMethod, deriveEncoder)
 
   /**
    * Creates a registration request using an internet address.
@@ -191,39 +190,6 @@ object RegistrationRequest:
    * @return A registration request.
    */
   def apply(phoneMac: String, phoneIp: InetAddress, register: Boolean, id: Option[Int]): RegistrationRequest =
-    RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, id)
-
-  /**
-   * Creates a registration request using an internet address.
-   *
-   * @param phoneMac The MAC address of the device registering for updates.
-   * @param phoneIp  The internet address of the device registering for updates.
-   * @return A registration request.
-   */
-  def from(phoneMac: String, phoneIp: InetAddress): RegistrationRequest =
-    RegistrationRequest(phoneMac, phoneIp.getHostAddress, true, None)
-
-  /**
-   * Creates a registration request using an internet address.
-   *
-   * @param phoneMac The MAC address of the device registering for updates.
-   * @param phoneIp  The internet address of the device registering for updates.
-   * @param register True to register for updates, false to deregister.
-   * @return A registration request.
-   */
-  def from(phoneMac: String, phoneIp: InetAddress, register: Boolean): RegistrationRequest =
-    RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, None)
-
-  /**
-   * Creates a registration request using an internet address.
-   *
-   * @param phoneMac The MAC address of the device registering for updates.
-   * @param phoneIp  The internet address of the device registering for updates.
-   * @param register True to register for updates, false to deregister.
-   * @param id       The optional correlation ID.
-   * @return A registration request.
-   */
-  def from(phoneMac: String, phoneIp: InetAddress, register: Boolean, id: Option[Int]): RegistrationRequest =
     RegistrationRequest(phoneMac, phoneIp.getHostAddress, register, id)
 
 /**
@@ -270,7 +236,7 @@ case class SetPilotRequest(
 object SetPilotRequest:
 
   /** The set pilot request encoder. */
-  given encoder: Encoder[SetPilotRequest] = Request.encoding(SetPilotMethod, deriveEncoder)
+  given Encoder[SetPilotRequest] = Request.encoding(SetPilotMethod, deriveEncoder)
 
   /**
    * Creates a set pilot request from a domain status.
@@ -296,7 +262,13 @@ object SetPilotRequest:
     case Status.Defined.Static(scene, brightness) =>
       SetPilotRequest(state = Some(true), sceneId = Some(scene.id), dimming = Some(brightness), id = id)
     case Status.Defined.Dynamic(scene, speed, brightness) =>
-      SetPilotRequest(state = Some(true), sceneId = Some(scene.id), speed = Some(speed), dimming = Some(brightness), id = id)
+      SetPilotRequest(
+        state = Some(true),
+        sceneId = Some(scene.id),
+        speed = Some(speed),
+        dimming = Some(brightness),
+        id = id
+      )
     case Status.Custom(color, brightness) =>
       SetPilotRequest(
         state = Some(true),
