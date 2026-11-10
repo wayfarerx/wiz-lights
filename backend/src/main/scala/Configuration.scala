@@ -34,7 +34,7 @@ import zio.{Task, ZIO}
  * @param registrationTtl   The duration after which a bulb registration is refreshed.
  * @param purgeTimeout      The timeout for devices that do not respond.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
- * @param devices           The optional device addresses for discovering lights across subnets.
+ * @param knownDevices      The known device addresses for discovering lights across subnets.
  */
 case class Configuration private(
   outgoingWindow: Int,
@@ -45,7 +45,7 @@ case class Configuration private(
   registrationTtl: FiniteDuration,
   purgeTimeout: FiniteDuration,
   retryBackoffs: List[FiniteDuration],
-  devices: Set[InetAddress] = Set.empty
+  knownDevices: Set[InetAddress]
 )
 
 /**
@@ -77,6 +77,9 @@ object Configuration:
   /** The default durations to wait between retrying outgoing messages. */
   val DefaultRetryBackoffs: List[FiniteDuration] = 200.milliseconds :: 350.milliseconds :: 500.milliseconds :: Nil
 
+  /** The default known device addresses for discovering lights across subnets. */
+  val DefaultKnownDevices: Set[InetAddress] = Set.empty
+
   /**
    * Creates a new backend configuration.
    *
@@ -88,7 +91,7 @@ object Configuration:
    * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @param registrationTtl   The duration after which a bulb registration is refreshed.
-   * @param devices           The optional device addresses for discovering lights across subnets.
+   * @param knownDevices      The known device addresses for discovering lights across subnets.
    * @return A new backend configuration.
    */
   def make(
@@ -100,7 +103,7 @@ object Configuration:
     registrationTtl: FiniteDuration = DefaultRegistrationTtl,
     purgeTimeout: FiniteDuration = DefaultPurgeTimeout,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs,
-    devices: Iterable[InetAddress] = Nil
+    knownDevices: Iterable[InetAddress] = DefaultKnownDevices
   ): Task[Configuration] =
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
@@ -117,7 +120,7 @@ object Configuration:
         registrationTtl,
         purgeTimeout,
         retryBackoffs.toList,
-        devices.toSet
+        knownDevices.toSet
       )
     }
 

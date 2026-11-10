@@ -40,7 +40,7 @@ import service.*
  * @param registrationTtl   The duration after which a bulb registration is refreshed.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  * @param purgeTimeout      The timeout for devices that do not respond.
- * @param seeds             The optional seed addresses for discovering lights across subnets.
+ * @param knownDevices      The known device addresses for discovering lights across subnets.
  * @param clock             The clock service.
  * @param network           The network service.
  * @param events            The hub of light events.
@@ -53,7 +53,7 @@ final class LightingLive private(
   registrationTtl: Duration,
   retryBackoffs: List[Duration],
   purgeTimeout: Duration,
-  seeds: Set[InetAddress],
+  knownDevices: Set[InetAddress],
   clock: Clock,
   network: Network,
   events: Hub[(Light, Option[Source])],
@@ -287,7 +287,7 @@ final class LightingLive private(
         state.macAddress
     }.toList
     _ <- if silentMacs.nonEmpty then invoke(silentMacs)(GetPilotRequest()) else ZIO.unit
-    _ <- if seeds.nonEmpty then network.publish(Outgoing.Send(seeds, GetPilotRequest())) else ZIO.unit
+    _ <- if knownDevices.nonEmpty then network.publish(Outgoing.Send(knownDevices, GetPilotRequest())) else ZIO.unit
     inactiveCutoff = now - (discoveryInterval.toMillis * 2.5).toLong
     disconnectedDevices <- devices.modify(_.disconnectInactive(inactiveCutoff))
     _ <- ZIO.foreachDiscard(disconnectedDevices) { state =>
@@ -880,7 +880,7 @@ object LightingLive:
         configuration.registrationTtl,
         configuration.purgeTimeout,
         configuration.retryBackoffs,
-        configuration.devices,
+        configuration.knownDevices,
         clock,
         network
       )
@@ -891,9 +891,10 @@ object LightingLive:
    * Creates a live lighting service.
    *
    * @param discoveryInterval The frequency of broadcast discovery attempts.
+   * @param registrationTtl   The duration after which a bulb registration is refreshed.
    * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
-   * @param seeds             The optional seed addresses for discovering lights across subnets.
+   * @param knownDevices      The known device addresses for discovering lights across subnets.
    * @param clock             The clock service.
    * @param network           The network service.
    * @return A live lighting service.
@@ -903,7 +904,7 @@ object LightingLive:
     registrationTtl: FiniteDuration,
     purgeTimeout: FiniteDuration,
     retryBackoffs: List[FiniteDuration],
-    seeds: Set[InetAddress] = Set.empty,
+    knownDevices: Set[InetAddress],
     clock: Clock,
     network: Network
   ): URIO[Scope, Lighting] = for
@@ -916,7 +917,7 @@ object LightingLive:
       Duration.fromScala(registrationTtl),
       retryBackoffs.map(Duration.fromScala),
       Duration.fromScala(purgeTimeout),
-      seeds,
+      knownDevices,
       clock,
       network,
       hub,
@@ -936,9 +937,9 @@ object LightingLive:
     }.forkScoped
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
     _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
-    _ <- if seeds.nonEmpty then
-      network.publish(Outgoing.Send(seeds, GetPilotRequest())) *>
-      network.publish(Outgoing.Send(seeds, GetSystemConfigRequest()))
+    _ <- if knownDevices.nonEmpty then
+      network.publish(Outgoing.Send(knownDevices, GetPilotRequest())) *>
+      network.publish(Outgoing.Send(knownDevices, GetSystemConfigRequest()))
     else ZIO.unit
     _ <- service.discover.repeat(Schedule.fixed(Duration.fromScala(discoveryInterval))).delay(Duration.fromScala(discoveryInterval)).forkScoped
     _ <- service.register.repeat(Schedule.fixed(Duration.fromScala(registrationTtl / 2))).forkScoped
