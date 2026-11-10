@@ -15,7 +15,7 @@ import io.netty.channel.*
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 
-import zio.{Cause, Chunk, RIO, Scope, Task, UIO, ZIO}
+import zio.{Chunk, RIO, Scope, Task, UIO, ZIO}
 import zio.stream.ZStream
 
 import protocol.{Request, Response}
@@ -53,7 +53,7 @@ private[network] final class Socket private[network](port: Int, channel: Channel
 private[network] object Socket:
 
   /** An event emitted by the underlying network stack. */
-  private[network] type Event = Either[Throwable, (InetAddress, ByteBuffer)]
+  private[network] type Event = (InetAddress, ByteBuffer)
 
   /**
    * Creates a new network socket.
@@ -103,19 +103,17 @@ private[network] object Socket:
   /**
    * Reads a message from the channel.
    *
-   * @param event Either an error that was received or packet data.
+   * @param event The address and payload of the received packet.
    * @return A new message if one can be read.
    */
-  private[network] def read(event: Event): UIO[Option[Incoming]] = event match
-    case Left(thrown) =>
-      ZIO.logInfoCause(s"Error while reading UDP packet: ${thrown.getMessage}", Cause.die(thrown)).map(_ => None)
-    case Right((address, payload)) => {
-      for
-        text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
-        json <- ZIO.fromEither(parseJson(text))
-        response <- ZIO.fromEither(json.as[Response])
-      yield Some(Incoming(address, response))
-    }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
+  private[network] def read(event: Event): UIO[Option[Incoming]] = {
+    val (address, payload) = event
+    for
+      text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
+      json <- ZIO.fromEither(parseJson(text))
+      response <- ZIO.fromEither(json.as[Response])
+    yield Some(Incoming(address, response))
+  }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
 
   /**
    * An inbound UDP packet handler that can target an optional live discovery service.
@@ -133,14 +131,8 @@ private[network] object Socket:
       val buffer = ByteBuffer.allocate(packet.content.readableBytes)
       packet.content.readBytes(buffer)
       buffer.flip()
-      _(ZIO.succeed(Chunk(Right(packet.sender.getAddress -> buffer))))
+      _(ZIO.succeed(Chunk(packet.sender.getAddress -> buffer)))
     }
-
-    /* Forward the cause to the registered callback. */
-    @annotation.nowarn("cat=deprecation")
-    //noinspection ScalaDeprecation
-    override def exceptionCaught(context: ChannelHandlerContext, cause: Throwable): Unit =
-      callback.foreach(_(ZIO.succeed(Chunk(Left(cause)))))
 
     /* Forward the closure to the registered callback. */
     override def channelInactive(context: ChannelHandlerContext): Unit =
