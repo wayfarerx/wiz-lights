@@ -121,18 +121,13 @@ object NetworkLive:
   private[network] type InterfaceDiscovery = UIO[(List[Local], Set[InetAddress])]
 
   /** The default network interface discovery mechanism. */
-  private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery = for
-    interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toSeq))
-      .catchAllCause(ZIO.logInfoCause("Cannot list the network interfaces.", _).map(_ => Seq.empty[NetworkInterface]))
-    availableInterfaces <- ZIO.filter(interfaces) { i =>
-      ZIO.attempt(!i.isLoopback && i.isUp).catchAllCause {
-        ZIO.logInfoCause(s"Unable to query the network interface: ${i.getName}.", _).map(_ => false)
-      }
-    }
+  private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery = (for
+    interfaces <- ZIO.attemptBlocking(Option(NetworkInterface.getNetworkInterfaces).map(_.asScala.toList).getOrElse(Nil))
+    availableInterfaces = interfaces.filter(i => !i.isLoopback && i.isUp)
     fallbackMac = availableInterfaces.iterator.flatMap { i =>
       Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_))
     }.nextOption()
-    localInterfaces = availableInterfaces.flatMap { i =>
+    (withBroadcast, withoutBroadcast) = availableInterfaces.flatMap { i =>
       val macOpt = Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_)).orElse(fallbackMac)
       macOpt.toList.flatMap { mac =>
         i.getInterfaceAddresses.asScala.flatMap { ifAddr =>
@@ -143,12 +138,12 @@ object NetworkLive:
           else None
         }
       }
-    }.sortBy(!_._1).map(_._2).toList
+    }.partition(_._1)
+    localInterfaces = (withBroadcast ++ withoutBroadcast).map(_._2)
     interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
-    broadcastAddresses <- interfaceAddresses.flatMap(Option apply _.getBroadcast) match
-      case Nil => DefaultBroadcastAddresses
-      case some => ZIO.succeed(some.toSet)
-  yield (localInterfaces, broadcastAddresses)
+    broadcastAddresses = interfaceAddresses.flatMap(Option apply _.getBroadcast).toSet
+    allBroadcastAddresses <- if broadcastAddresses.isEmpty then DefaultBroadcastAddresses else ZIO.succeed(broadcastAddresses)
+  yield (localInterfaces, allBroadcastAddresses)).orDie
 
   /** The layer that provides the default network service. */
   val layer: RLayer[Configuration, Network] = ZLayer.scoped {
