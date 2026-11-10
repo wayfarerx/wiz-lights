@@ -74,7 +74,7 @@ trait Network:
  * @param incoming         The hub of incoming messages.
  * @param interfaceChanges The hub of interface change notifications.
  */
-final class NetworkLive private(
+final class NetworkLive private[network](
   interfaces: Ref[List[Local]],
   outgoing: Queue[Outgoing],
   incoming: Hub[Incoming],
@@ -111,88 +111,17 @@ final class NetworkLive private(
 object NetworkLive:
 
   /** The golden ratio for staggering broadcast address refreshes. */
-  private val GoldenRatio = (1.0 + Math.sqrt(5.0)) / 2.0
+  private[network] val GoldenRatio = (1.0 + Math.sqrt(5.0)) / 2.0
 
   /** The default broadcast addresses. */
-  private val DefaultBroadcastAddresses =
-    ZIO.attempt(Set(InetAddress.ofLiteral("255.255.255.255"))).memoize.flatten
+  private[network] val DefaultBroadcastAddresses: UIO[Set[InetAddress]] =
+    ZIO.succeed(Set(InetAddress.ofLiteral("255.255.255.255")))
 
-  /** The layer that provides the default network service. */
-  val layer: RLayer[Configuration, Network] = ZLayer.scoped {
-    for
-      config <- ZIO.service[Configuration]
-      network <- make(
-        config.outgoingWindow,
-        config.incomingWindow,
-        config.commandPort,
-        config.listenerPort,
-        config.discoveryInterval
-      )
-    yield network
-  }
+  /** Discovers local network interfaces and broadcast addresses. */
+  private[network] type InterfaceDiscovery = UIO[(List[Local], Set[InetAddress])]
 
-  /**
-   * Creates a live network representation.
-   *
-   * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
-   * @param incomingWindow    The number of incoming responses to keep in the network hub.
-   * @param commandPort       The network port to send commands on.
-   * @param listenerPort      The network port to also listen on.
-   * @param discoveryInterval The interval to wait between discovering devices.
-   * @return A live network representation.
-   */
-  def make(
-    outgoingWindow: Int,
-    incomingWindow: Int,
-    commandPort: Int,
-    listenerPort: Int,
-    discoveryInterval: FiniteDuration
-  ): RIO[Scope, Network] =
-    for
-      eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
-      outgoing <- Queue.sliding[Outgoing](outgoingWindow)
-      incoming <- Hub.sliding[Incoming](incomingWindow)
-      interfaceChanges <- Hub.sliding[Unit](16)
-      received = incoming.publish(_: Incoming).ignore
-      commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
-      listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
-      refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
-      interfaces <- Ref.make[List[Local]](Nil)
-      broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
-      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges)
-      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges)
-        .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
-      _ <- ZStream.fromQueue(outgoing).foreach(write(broadcastAddresses, commandSocket, _)).forkScoped
-    yield NetworkLive(interfaces, outgoing, incoming, interfaceChanges)
-
-  /**
-   * Acquires an event loop group.
-   *
-   * @return The acquired event loop group.
-   */
-  private def acquireEventLoopGroup: Task[EventLoopGroup] =
-    ZIO.attemptBlocking(MultiThreadIoEventLoopGroup(NioIoHandler.newFactory))
-
-  /**
-   * Releases an event loop group.
-   *
-   * @param group The event loop group to release.
-   */
-  private def releaseEventLoopGroup(group: EventLoopGroup): UIO[Unit] =
-    ZIO.attemptBlocking(group.close()).ignore
-
-  /**
-   * Refreshes the cached network information.
-   *
-   * @param interfacesRef         The reference to the current local interfaces.
-   * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
-   * @param interfaceChanges     The hub of interface change notifications.
-   */
-  private def refreshNetworkInfo(
-    interfacesRef: Ref[List[Local]],
-    broadcastAddressesRef: Ref[Set[InetAddress]],
-    interfaceChanges: Hub[Unit]
-  ): UIO[Unit] = for
+  /** The default network interface discovery mechanism. */
+  private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery = for
     interfaces <- ZIO.attempt(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toSeq))
       .catchAllCause(ZIO.logInfoCause("Cannot list the network interfaces.", _).map(_ => Seq.empty[NetworkInterface]))
     availableInterfaces <- ZIO.filter(interfaces) { i =>
@@ -217,10 +146,91 @@ object NetworkLive:
     }.sortBy(!_._1).map(_._2).toList
     interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
     broadcastAddresses <- interfaceAddresses.flatMap(Option apply _.getBroadcast) match
-      case Nil => DefaultBroadcastAddresses.catchAllCause {
-        ZIO.logWarningCause("Cannot find any broadcast addresses.", _) map (_ => Set.empty)
-      }
+      case Nil => DefaultBroadcastAddresses
       case some => ZIO.succeed(some.toSet)
+  yield (localInterfaces, broadcastAddresses)
+
+  /** The layer that provides the default network service. */
+  val layer: RLayer[Configuration, Network] = ZLayer.scoped {
+    for
+      config <- ZIO.service[Configuration]
+      network <- make(
+        config.outgoingWindow,
+        config.incomingWindow,
+        config.commandPort,
+        config.listenerPort,
+        config.discoveryInterval
+      )
+    yield network
+  }
+
+  /**
+   * Creates a live network representation.
+   *
+   * @param outgoingWindow     The number of outgoing requests to keep in the network queue.
+   * @param incomingWindow     The number of incoming responses to keep in the network hub.
+   * @param commandPort        The network port to send commands on.
+   * @param listenerPort       The network port to also listen on.
+   * @param discoveryInterval  The interval to wait between discovering devices.
+   * @param interfaceDiscovery The mechanism to discover local interfaces and broadcast addresses.
+   * @return A live network representation.
+   */
+  def make(
+    outgoingWindow: Int,
+    incomingWindow: Int,
+    commandPort: Int,
+    listenerPort: Int,
+    discoveryInterval: FiniteDuration,
+    interfaceDiscovery: InterfaceDiscovery = DefaultInterfaceDiscovery
+  ): RIO[Scope, Network] =
+    for
+      eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
+      outgoing <- Queue.sliding[Outgoing](outgoingWindow)
+      incoming <- Hub.sliding[Incoming](incomingWindow)
+      interfaceChanges <- Hub.sliding[Unit](16)
+      received = incoming.publish(_: Incoming).ignore
+      commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
+      listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
+      refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
+      interfaces <- Ref.make[List[Local]](Nil)
+      broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
+      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges, interfaceDiscovery)
+      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges, interfaceDiscovery)
+        .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
+      _ <- ZStream.fromQueue(outgoing).foreach(write(broadcastAddresses, commandSocket, _)).forkScoped
+    yield NetworkLive(interfaces, outgoing, incoming, interfaceChanges)
+
+  /**
+   * Acquires an event loop group.
+   *
+   * @return The acquired event loop group.
+   */
+  private[network] def acquireEventLoopGroup: Task[EventLoopGroup] =
+    ZIO.attemptBlocking(MultiThreadIoEventLoopGroup(NioIoHandler.newFactory))
+
+  /**
+   * Releases an event loop group.
+   *
+   * @param group The event loop group to release.
+   */
+  private[network] def releaseEventLoopGroup(group: EventLoopGroup): UIO[Unit] =
+    ZIO.attemptBlocking(group.close()).ignore
+
+  /**
+   * Refreshes the cached network information.
+   *
+   * @param interfacesRef         The reference to the current local interfaces.
+   * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
+   * @param interfaceChanges      The hub of interface change notifications.
+   * @param interfaceDiscovery    The mechanism to discover local interfaces and broadcast addresses.
+   */
+  private[network] def refreshNetworkInfo(
+    interfacesRef: Ref[List[Local]],
+    broadcastAddressesRef: Ref[Set[InetAddress]],
+    interfaceChanges: Hub[Unit],
+    interfaceDiscovery: InterfaceDiscovery = DefaultInterfaceDiscovery
+  ): UIO[Unit] = for
+    (localInterfaces, broadcastAddresses) <- interfaceDiscovery
     oldInterfaces <- interfacesRef.get
     oldBroadcast <- broadcastAddressesRef.get
     _ <- interfacesRef.set(localInterfaces)
@@ -237,7 +247,7 @@ object NetworkLive:
    * @param socket             The socket to write to.
    * @param message            The message to write to the socket.
    */
-  private def write(broadcastAddresses: Ref[Set[InetAddress]], socket: Socket, message: Outgoing): UIO[Unit] = for
+  private[network] def write(broadcastAddresses: Ref[Set[InetAddress]], socket: Socket, message: Outgoing): UIO[Unit] = for
     addresses <- message match
       case Outgoing.Broadcast(_) => broadcastAddresses.get
       case Outgoing.Send(addresses, _) => ZIO.succeed(addresses)

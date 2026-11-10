@@ -26,7 +26,7 @@ import protocol.{Request, Response}
  * @param port    The network port to connect to.
  * @param channel The active network channel.
  */
-private final class Socket private(port: Int, channel: Channel):
+private[network] final class Socket private[network](port: Int, channel: Channel):
 
   /**
    * Sends a request to the specified addresses.
@@ -50,10 +50,10 @@ private final class Socket private(port: Int, channel: Channel):
 /**
  * Factory for network sockets.
  */
-private object Socket:
+private[network] object Socket:
 
   /** An event emitted by the underlying network stack. */
-  private type Event = Either[Throwable, (InetAddress, ByteBuffer)]
+  private[network] type Event = Either[Throwable, (InetAddress, ByteBuffer)]
 
   /**
    * Creates a new network socket.
@@ -78,7 +78,7 @@ private object Socket:
    * @param handler        The handler to dispatch to.
    * @return A channel using the specified handler.
    */
-  private def acquireChannel(port: Int, eventLoopGroup: EventLoopGroup, handler: Handler): Task[Channel] =
+  private[network] def acquireChannel(port: Int, eventLoopGroup: EventLoopGroup, handler: Handler): Task[Channel] =
     ZIO.attemptBlocking(
       Bootstrap()
         .group(eventLoopGroup)
@@ -97,7 +97,7 @@ private object Socket:
    * @param channel The channel to release.
    * @return An effect that releases the channel.
    */
-  private def releaseChannel(channel: Channel): UIO[Unit] =
+  private[network] def releaseChannel(channel: Channel): UIO[Unit] =
     ZIO.attemptBlocking(channel.close.await).ignore
 
   /**
@@ -106,7 +106,7 @@ private object Socket:
    * @param event Either an error that was received or packet data.
    * @return A new message if one can be read.
    */
-  private def read(event: Event): UIO[Option[Incoming]] = event match
+  private[network] def read(event: Event): UIO[Option[Incoming]] = event match
     case Left(thrown) =>
       ZIO.logInfoCause(s"Error while reading UDP packet: ${thrown.getMessage}", Cause.die(thrown)).map(_ => None)
     case Right((address, payload)) => {
@@ -120,7 +120,7 @@ private object Socket:
   /**
    * An inbound UDP packet handler that can target an optional live discovery service.
    */
-  private final class Handler extends SimpleChannelInboundHandler[DatagramPacket]:
+  private[network] final class Handler extends SimpleChannelInboundHandler[DatagramPacket]:
 
     /** The callback to emit to the stream. */
     @volatile private var callback: Option[ZStream.Emit[Any, Throwable, Event, Unit]] = None
