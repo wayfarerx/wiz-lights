@@ -18,21 +18,26 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import java.net.InetAddress
+import java.net.{InetAddress, InterfaceAddress}
 import java.nio.ByteBuffer
 
 /**
  * Information about a local network interface.
  *
- * @param macAddress   The MAC address of the interface in hexadecimal.
- * @param ipAddress    The IP address of the interface.
- * @param prefixLength The subnet prefix length (e.g., 24 for a /24 subnet).
+ * @param macAddress       The MAC address of the interface in hexadecimal.
+ * @param ipAddress        The IP address of the interface.
+ * @param prefixLength     The subnet prefix length (e.g., 24 for a /24 subnet).
+ * @param broadcastAddress The optional broadcast address of the interface subnet.
  */
 case class Local(
   macAddress: String,
   ipAddress: InetAddress,
-  prefixLength: Short
+  prefixLength: Short,
+  broadcastAddress: Option[InetAddress] = None
 ):
+
+  /** Returns true if this interface has an associated broadcast address. */
+  def canBroadcast: Boolean = broadcastAddress.isDefined
 
   /**
    * Returns true if the specified target internet address is on the same subnet as this interface.
@@ -49,3 +54,21 @@ case class Local(
       val mask = if prefixLength <= 0 then 0 else if prefixLength >= 32 then -1 else -1 << (32 - prefixLength)
       (targetInt & mask) == (localInt & mask)
     else false
+
+/**
+ * Definitions associated with local network interfaces.
+ */
+object Local:
+
+  /**
+   * Attempts to create a local network interface from a MAC address and interface address.
+   *
+   * @param mac    The MAC address of the interface.
+   * @param ifAddr The interface address to inspect.
+   * @return The local network interface if the address is a valid IPv4 address.
+   */
+  def from(mac: String, ifAddr: InterfaceAddress): Option[Local] =
+    val addr = ifAddr.getAddress
+    if addr != null && addr.getAddress.length == 4 then
+      Some(Local(mac, addr, ifAddr.getNetworkPrefixLength, Option(ifAddr.getBroadcast)))
+    else None

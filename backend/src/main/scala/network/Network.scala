@@ -18,10 +18,9 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import java.net.{InetAddress, NetworkInterface}
+import java.net.InetAddress
 
 import scala.concurrent.duration.*
-import scala.jdk.CollectionConverters.*
 
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.{EventLoopGroup, MultiThreadIoEventLoopGroup}
@@ -69,13 +68,13 @@ trait Network:
 /**
  * The live implementation of the network service.
  *
- * @param interfaces       The cached local network interfaces.
+ * @param topology         The cached local network topology.
  * @param outgoing         The queue of outgoing messages.
  * @param incoming         The hub of incoming messages.
  * @param interfaceChanges The hub of interface change notifications.
  */
 final class NetworkLive private[network](
-  interfaces: Ref[List[Local]],
+  topology: Ref[Topology],
   outgoing: Queue[Outgoing],
   incoming: Hub[Incoming],
   interfaceChanges: Hub[Unit]
@@ -83,15 +82,11 @@ final class NetworkLive private[network](
 
   /* Return the default local MAC address and internet address if available. */
   override def localhost: UIO[Option[(String, String)]] =
-    interfaces.get.map(_.headOption.map(i => i.macAddress -> i.ipAddress.getHostAddress))
+    topology.get.map(_.localhost)
 
   /* Return the local MAC address and internet address for communicating with the specified target if available. */
   override def localhost(target: InetAddress): UIO[Option[(String, String)]] =
-    interfaces.get.map { list =>
-      list.find(_.matches(target))
-        .orElse(list.headOption)
-        .map(i => i.macAddress -> i.ipAddress.getHostAddress)
-    }
+    topology.get.map(_.localhost(target))
 
   /* Publish a command message on the command port. */
   override def publish(message: Outgoing): UIO[Unit] =
@@ -115,35 +110,14 @@ object NetworkLive:
 
   /** The default broadcast addresses. */
   private[network] val DefaultBroadcastAddresses: UIO[Set[InetAddress]] =
-    ZIO.succeed(Set(InetAddress.ofLiteral("255.255.255.255")))
+    ZIO.succeed(Topology.DefaultBroadcastAddresses)
 
   /** Discovers local network interfaces and broadcast addresses. */
-  private[network] type InterfaceDiscovery = UIO[(List[Local], Set[InetAddress])]
+  private[network] type InterfaceDiscovery = UIO[Topology]
 
   /** The default network interface discovery mechanism. */
-  private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery = (for
-    interfaces <- ZIO.attemptBlocking(Option(NetworkInterface.getNetworkInterfaces).map(_.asScala.toList).getOrElse(Nil))
-    availableInterfaces = interfaces.filter(i => !i.isLoopback && i.isUp)
-    fallbackMac = availableInterfaces.iterator.flatMap { i =>
-      Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_))
-    }.nextOption()
-    (withBroadcast, withoutBroadcast) = availableInterfaces.flatMap { i =>
-      val macOpt = Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_)).orElse(fallbackMac)
-      macOpt.toList.flatMap { mac =>
-        i.getInterfaceAddresses.asScala.flatMap { ifAddr =>
-          val addr = ifAddr.getAddress
-          if addr.getAddress.length == 4 then
-            val hasBroadcast = ifAddr.getBroadcast != null
-            Some((hasBroadcast, Local(mac, addr, ifAddr.getNetworkPrefixLength)))
-          else None
-        }
-      }
-    }.partition(_._1)
-    localInterfaces = (withBroadcast ++ withoutBroadcast).map(_._2)
-    interfaceAddresses = availableInterfaces.flatMap(_.getInterfaceAddresses.asScala)
-    broadcastAddresses = interfaceAddresses.flatMap(Option apply _.getBroadcast).toSet
-    allBroadcastAddresses <- if broadcastAddresses.isEmpty then DefaultBroadcastAddresses else ZIO.succeed(broadcastAddresses)
-  yield (localInterfaces, allBroadcastAddresses)).orDie
+  private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery =
+    Topology.discover.orDie
 
   /** The layer that provides the default network service. */
   val layer: RLayer[Configuration, Network] = ZLayer.scoped {
@@ -187,13 +161,12 @@ object NetworkLive:
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
       refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
-      interfaces <- Ref.make[List[Local]](Nil)
-      broadcastAddresses <- DefaultBroadcastAddresses.flatMap(Ref.make)
-      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges, interfaceDiscovery)
-      _ <- refreshNetworkInfo(interfaces, broadcastAddresses, interfaceChanges, interfaceDiscovery)
+      topology <- Ref.make[Topology](Topology())
+      _ <- refreshNetworkInfo(topology, interfaceChanges, interfaceDiscovery)
+      _ <- refreshNetworkInfo(topology, interfaceChanges, interfaceDiscovery)
         .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
-      _ <- ZStream.fromQueue(outgoing).foreach(write(broadcastAddresses, commandSocket, _)).forkScoped
-    yield NetworkLive(interfaces, outgoing, incoming, interfaceChanges)
+      _ <- ZStream.fromQueue(outgoing).foreach(write(topology, commandSocket, _)).forkScoped
+    yield NetworkLive(topology, outgoing, incoming, interfaceChanges)
 
   /**
    * Acquires an event loop group.
@@ -214,23 +187,18 @@ object NetworkLive:
   /**
    * Refreshes the cached network information.
    *
-   * @param interfacesRef         The reference to the current local interfaces.
-   * @param broadcastAddressesRef The reference to the current set of broadcast addresses.
-   * @param interfaceChanges      The hub of interface change notifications.
-   * @param interfaceDiscovery    The mechanism to discover local interfaces and broadcast addresses.
+   * @param topologyRef        The reference to the current network topology.
+   * @param interfaceChanges   The hub of interface change notifications.
+   * @param interfaceDiscovery The mechanism to discover local interfaces and broadcast addresses.
    */
   private[network] def refreshNetworkInfo(
-    interfacesRef: Ref[List[Local]],
-    broadcastAddressesRef: Ref[Set[InetAddress]],
+    topologyRef: Ref[Topology],
     interfaceChanges: Hub[Unit],
     interfaceDiscovery: InterfaceDiscovery = DefaultInterfaceDiscovery
   ): UIO[Unit] = for
-    (localInterfaces, broadcastAddresses) <- interfaceDiscovery
-    oldInterfaces <- interfacesRef.get
-    oldBroadcast <- broadcastAddressesRef.get
-    _ <- interfacesRef.set(localInterfaces)
-    _ <- broadcastAddressesRef.set(broadcastAddresses)
-    _ <- if localInterfaces != oldInterfaces || broadcastAddresses != oldBroadcast then
+    newTopology <- interfaceDiscovery
+    oldTopology <- topologyRef.getAndSet(newTopology)
+    _ <- if newTopology != oldTopology then
       interfaceChanges.publish(()).ignore
     else ZIO.unit
   yield ()
@@ -238,14 +206,10 @@ object NetworkLive:
   /**
    * Writes a message to the specified socket.
    *
-   * @param broadcastAddresses The live collection of available broadcast addresses.
-   * @param socket             The socket to write to.
-   * @param message            The message to write to the socket.
+   * @param topology The live network topology.
+   * @param socket   The socket to write to.
+   * @param message  The message to write to the socket.
    */
-  private[network] def write(broadcastAddresses: Ref[Set[InetAddress]], socket: Socket, message: Outgoing): UIO[Unit] = for
-    addresses <- message match
-      case Outgoing.Broadcast(_) => broadcastAddresses.get
-      case Outgoing.Send(addresses, _) => ZIO.succeed(addresses)
-    _ <- socket(addresses, message.request)
-  yield ()
+  private[network] def write(topology: Ref[Topology], socket: Socket, message: Outgoing): UIO[Unit] =
+    topology.get.flatMap(t => socket(t.destinations(message), message.request))
 
