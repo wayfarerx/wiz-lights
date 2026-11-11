@@ -35,17 +35,21 @@ private[network] final class Socket private[network](port: Int, channel: Channel
    * @param request   The request to send.
    */
   def apply(addresses: Iterable[InetAddress], request: Request): UIO[Unit] =
-    val datagram = request.asJson.noSpaces
-    ZIO.foreachParDiscard(addresses) { address =>
-      ZIO.attemptBlocking {
-        channel.writeAndFlush(
-          DatagramPacket(
+    ZIO.suspendSucceed {
+      val datagram = request.asJson.noSpaces
+      ZIO.foreachDiscard(addresses) { address =>
+        ZIO.async[Any, Throwable, Unit] { cb =>
+          val packet = DatagramPacket(
             Unpooled.copiedBuffer(datagram, StandardCharsets.UTF_8),
             InetSocketAddress(address, port)
           )
-        ).sync()
-      }.catchAllCause(ZIO.logWarningCause(_))
-    }.fork.ignore
+          channel.writeAndFlush(packet).addListener { (future: ChannelFuture) =>
+            if future.isSuccess then cb(ZIO.unit)
+            else cb(ZIO.fail(Option(future.cause).getOrElse(RuntimeException("Channel write failed"))))
+          }
+        }.catchAllCause(ZIO.logWarningCause(_))
+      }
+    }
 
 /**
  * Factory for network sockets.
