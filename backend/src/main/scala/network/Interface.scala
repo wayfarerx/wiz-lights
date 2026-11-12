@@ -29,7 +29,7 @@ import java.nio.ByteBuffer
  * @param prefixLength     The subnet prefix length (e.g., 24 for a /24 subnet).
  * @param broadcastAddress The optional broadcast address of the interface subnet.
  */
-case class Local(
+case class Interface(
   macAddress: String,
   ipAddress: InetAddress,
   prefixLength: Short,
@@ -58,7 +58,7 @@ case class Local(
 /**
  * Definitions associated with local network interfaces.
  */
-object Local:
+object Interface:
 
   /**
    * Attempts to create a local network interface from a MAC address and interface address.
@@ -67,8 +67,8 @@ object Local:
    * @param ifAddr The interface address to inspect.
    * @return The local network interface if the address is a valid IPv4 address.
    */
-  def from(mac: String, ifAddr: InterfaceAddress): Option[Local] =
+  def from(mac: String, ifAddr: InterfaceAddress): Option[Interface] =
     val addr = ifAddr.getAddress
     if addr != null && addr.getAddress.length == 4 then
-      Some(Local(mac, addr, ifAddr.getNetworkPrefixLength, Option(ifAddr.getBroadcast)))
+      Some(Interface(mac, addr, ifAddr.getNetworkPrefixLength, Option(ifAddr.getBroadcast)))
     else None

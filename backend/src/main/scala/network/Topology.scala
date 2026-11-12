@@ -31,7 +31,7 @@ import zio.{IO, ZIO}
  * @param defaultBroadcast The default broadcast addresses to use when none are discovered.
  */
 case class Topology(
-  interfaces: List[Local] = Nil,
+  interfaces: List[Interface] = Nil,
   defaultBroadcast: Set[InetAddress] = Topology.DefaultBroadcastAddresses
 ):
 
@@ -41,7 +41,7 @@ case class Topology(
     if discovered.nonEmpty then discovered else defaultBroadcast
 
   /** Returns the default local network interface if available. */
-  def localInterface: Option[Local] =
+  def localInterface: Option[Interface] =
     interfaces.headOption
 
   /**
@@ -50,7 +50,7 @@ case class Topology(
    * @param target The destination address of the target device.
    * @return The local network interface for communicating with the target if available.
    */
-  def localInterface(target: InetAddress): Option[Local] =
+  def localInterface(target: InetAddress): Option[Interface] =
     interfaces.find(_.matches(target)).orElse(localInterface)
 
   /** Returns the default local MAC address and internet address if available. */
@@ -108,7 +108,7 @@ object Topology:
       val locals = available.flatMap { iface =>
         val mac = macOf(iface).orElse(fallbackMac)
         mac.toList.flatMap { m =>
-          iface.getInterfaceAddresses.asScala.flatMap(Local.from(m, _))
+          iface.getInterfaceAddresses.asScala.flatMap(Interface.from(m, _))
         }
       }.sortBy(!_.canBroadcast)
       Right(Topology(locals, defaultBroadcast))
