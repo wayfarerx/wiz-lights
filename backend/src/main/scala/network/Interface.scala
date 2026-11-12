@@ -19,7 +19,6 @@ package backend
 package network
 
 import java.net.{InetAddress, InterfaceAddress}
-import java.nio.ByteBuffer
 
 /**
  * Information about a local network interface.
@@ -40,6 +39,15 @@ case class Interface(
   def canBroadcast: Boolean = broadcastAddress.isDefined
 
   /**
+   * Converts a 4-byte array to an Int without allocation.
+   *
+   * @param bytes The 4-byte array to convert.
+   * @return The integer representation of the bytes.
+   */
+  private def bytesToInt(bytes: Array[Byte]): Int =
+    ((bytes(0) & 0xff) << 24) | ((bytes(1) & 0xff) << 16) | ((bytes(2) & 0xff) << 8) | (bytes(3) & 0xff)
+
+  /**
    * Returns true if the specified target internet address is on the same subnet as this interface.
    *
    * @param target The target internet address to test.
@@ -49,10 +57,11 @@ case class Interface(
     val targetBytes = target.getAddress
     val localBytes = ipAddress.getAddress
     if targetBytes.length == 4 && localBytes.length == 4 then
-      val targetInt = ByteBuffer.wrap(targetBytes).getInt
-      val localInt = ByteBuffer.wrap(localBytes).getInt
-      val mask = if prefixLength <= 0 then 0 else if prefixLength >= 32 then -1 else -1 << (32 - prefixLength)
-      (targetInt & mask) == (localInt & mask)
+      val mask = prefixLength match
+        case pl if pl <= 0  => 0
+        case pl if pl >= 32 => -1
+        case pl             => -1 << (32 - pl)
+      (bytesToInt(targetBytes) & mask) == (bytesToInt(localBytes) & mask)
     else false
 
 /**
