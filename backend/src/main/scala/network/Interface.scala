@@ -32,7 +32,7 @@ import java.nio.ByteBuffer
 case class Interface(
   macAddress: String,
   ipAddress: InetAddress,
-  prefixLength: Short,
+  prefixLength: Int,
   broadcastAddress: Option[InetAddress] = None
 ):
 
