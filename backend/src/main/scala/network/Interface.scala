@@ -77,7 +77,6 @@ object Interface:
    * @return The local network interface if the address is a valid IPv4 address.
    */
   def from(mac: String, ifAddr: InterfaceAddress): Option[Interface] =
-    val addr = ifAddr.getAddress
-    if addr != null && addr.getAddress.length == 4 then
-      Some(Interface(mac, addr, ifAddr.getNetworkPrefixLength, Option(ifAddr.getBroadcast)))
-    else None
+    Option(ifAddr.getAddress).filter(_.getAddress.length == 4).map { addr =>
+      Interface(mac, addr, ifAddr.getNetworkPrefixLength, Option(ifAddr.getBroadcast))
+    }
