@@ -39,21 +39,12 @@ case class Interface(
   def canBroadcast: Boolean = broadcastAddress.isDefined
 
   /**
-   * Converts a 4-byte array to an Int without allocation.
-   *
-   * @param bytes The 4-byte array to convert.
-   * @return The integer representation of the bytes.
-   */
-  private def bytesToInt(bytes: Array[Byte]): Int =
-    ((bytes(0) & 0xff) << 24) | ((bytes(1) & 0xff) << 16) | ((bytes(2) & 0xff) << 8) | (bytes(3) & 0xff)
-
-  /**
    * Returns true if the specified target internet address is on the same subnet as this interface.
    *
    * @param target The target internet address to test.
    * @return True if the target internet address is on the same subnet as this interface.
    */
-  def matches(target: InetAddress): Boolean =
+  def targets(target: InetAddress): Boolean =
     val targetBytes = target.getAddress
     val localBytes = ipAddress.getAddress
     if targetBytes.length == 4 && localBytes.length == 4 then
@@ -63,6 +54,15 @@ case class Interface(
         case pl             => -1 << (32 - pl)
       (bytesToInt(targetBytes) & mask) == (bytesToInt(localBytes) & mask)
     else false
+
+  /**
+   * Converts a 4-byte array to an Int without allocation.
+   *
+   * @param bytes The 4-byte array to convert.
+   * @return The integer representation of the bytes.
+   */
+  private def bytesToInt(bytes: Array[Byte]): Int =
+    ((bytes(0) & 0xff) << 24) | ((bytes(1) & 0xff) << 16) | ((bytes(2) & 0xff) << 8) | (bytes(3) & 0xff)
 
 /**
  * Definitions associated with local network interfaces.

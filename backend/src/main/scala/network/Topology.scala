@@ -51,7 +51,7 @@ case class Topology(
    * @return The local network interface for communicating with the target if available.
    */
   def localInterface(target: InetAddress): Option[Interface] =
-    interfaces.find(_.matches(target)).orElse(localInterface)
+    interfaces.find(_.targets(target)).orElse(localInterface)
 
   /** Returns the default local MAC address and internet address if available. */
   def localhost: Option[(String, String)] =
@@ -94,24 +94,24 @@ object Topology:
   /**
    * Creates a network topology from the specified network interfaces.
    *
-   * @param interfaces       The network interfaces to inspect.
-   * @param defaultBroadcast The default broadcast addresses to use if none are found.
+   * @param networkInterfaces The network interfaces to inspect.
+   * @param defaultBroadcast  The default broadcast addresses to use if none are found.
    * @return The constructed network topology or a socket exception if an error occurs.
    */
   def from(
-    interfaces: Iterable[NetworkInterface],
+    networkInterfaces: Iterable[NetworkInterface],
     defaultBroadcast: Set[InetAddress] = DefaultBroadcastAddresses
   ): Either[SocketException, Topology] =
     try
-      val available = interfaces.filter(i => !i.isLoopback && i.isUp).toList
+      val available = networkInterfaces.filter(i => !i.isLoopback && i.isUp).toList
       val fallbackMac = available.iterator.flatMap(macOf).nextOption()
-      val locals = available.flatMap { iface =>
-        val mac = macOf(iface).orElse(fallbackMac)
+      val interfaces = available.flatMap { interface =>
+        val mac = macOf(interface).orElse(fallbackMac)
         mac.toList.flatMap { m =>
-          iface.getInterfaceAddresses.asScala.flatMap(Interface.from(m, _))
+          interface.getInterfaceAddresses.asScala.flatMap(Interface.from(m, _))
         }
       }.sortBy(!_.canBroadcast)
-      Right(Topology(locals, defaultBroadcast))
+      Right(Topology(interfaces, defaultBroadcast))
     catch
       case e: SocketException => Left(e)
 
