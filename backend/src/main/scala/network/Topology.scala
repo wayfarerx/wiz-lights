@@ -35,7 +35,9 @@ case class Topology(
   defaultBroadcast: Set[InetAddress] = Topology.DefaultBroadcastAddresses
 ):
 
-  /** The available broadcast addresses. */
+  /**
+   * Returns the available broadcast addresses, falling back to the default if none are discovered.
+   */
   def broadcastAddresses: Set[InetAddress] =
     val discovered = interfaces.flatMap(_.broadcastAddress).toSet
     if discovered.nonEmpty then discovered else defaultBroadcast
