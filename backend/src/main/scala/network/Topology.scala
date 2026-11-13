@@ -85,6 +85,9 @@ object Topology:
   val DefaultBroadcastAddresses: Set[InetAddress] =
     Set(InetAddress.ofLiteral("255.255.255.255"))
 
+  /** The hex format for MAC address conversion. */
+  private val hexFormat = java.util.HexFormat.of()
+
   /** Discovers the local network topology. */
   val discover: IO[SocketException, Topology] =
     ZIO.attemptBlocking(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toList))
@@ -135,4 +138,4 @@ object Topology:
    * @return The MAC address in hexadecimal if available.
    */
   private def macOf(i: NetworkInterface): Option[String] =
-    Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_))
+    Option(i.getHardwareAddress).filter(_.length == 6).map(hexFormat.formatHex)
