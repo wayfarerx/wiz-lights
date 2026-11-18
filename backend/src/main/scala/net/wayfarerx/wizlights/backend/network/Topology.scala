@@ -19,10 +19,11 @@ package backend
 package network
 
 import java.net.{InetAddress, NetworkInterface, SocketException}
+import java.util.HexFormat
 
 import scala.jdk.CollectionConverters.*
 
-import zio.{IO, ZIO}
+import zio.{IO, UIO, ZIO}
 
 /**
  * The topology of the local network.
@@ -85,54 +86,50 @@ object Topology:
   val DefaultBroadcastAddresses: Set[InetAddress] =
     Set(InetAddress.ofLiteral("255.255.255.255"))
 
-  /** Discovers the local network topology. */
-  val discover: IO[SocketException, Topology] =
-    ZIO.attemptBlocking(Option(NetworkInterface.getNetworkInterfaces).fold(Nil)(_.asScala.toList))
-      .refineToOrDie[SocketException]
-      .flatMap(make(_))
-
   /**
-   * Creates a network topology from the specified network interfaces.
+   * Discovers the local network topology.
    *
-   * @param networkInterfaces The network interfaces to inspect.
-   * @param defaultBroadcast  The default broadcast addresses to use if none are found.
-   * @return The constructed network topology or a socket exception if an error occurs.
+   * @param defaultBroadcastAddresses The default broadcast addresses to use if none are found.
    */
-  def from(
-    networkInterfaces: Iterable[NetworkInterface],
-    defaultBroadcast: Set[InetAddress] = DefaultBroadcastAddresses
-  ): Either[SocketException, Topology] =
-    try
-      val available = networkInterfaces.filter(i => !i.isLoopback && i.isUp).toList
-      val fallbackMac = available.iterator.flatMap(macOf).nextOption()
-      val interfaces = available.flatMap { interface =>
-        val mac = macOf(interface).orElse(fallbackMac)
-        mac.toList.flatMap { m =>
-          interface.getInterfaceAddresses.asScala.flatMap(Interface.from(m, _))
-        }
-      }.sortBy(!_.canBroadcast)
-      Right(Topology(interfaces, defaultBroadcast))
-    catch
-      case e: SocketException => Left(e)
+  def discover(defaultBroadcastAddresses: Set[InetAddress] = DefaultBroadcastAddresses): IO[SocketException, Topology] =
+    for
+      interfaces <- ZIO.attemptBlocking[Seq[NetworkInterface]](
+        Option(NetworkInterface.getNetworkInterfaces).fold(Seq.empty)(_.asScala.toSeq)
+      ).refineToOrDie[SocketException]
+      result <- make(interfaces, defaultBroadcastAddresses)
+    yield result
 
   /**
    * Creates a network topology from the specified network interfaces.
    *
-   * @param interfaces       The network interfaces to inspect.
-   * @param defaultBroadcast The default broadcast addresses to use if none are found.
+   * @param networkInterfaces          The network interfaces to inspect.
+   * @param defaultBroadcastAddresses  The default broadcast addresses to use if none are found.
    * @return The constructed network topology.
    */
   def make(
-    interfaces: Iterable[NetworkInterface],
-    defaultBroadcast: Set[InetAddress] = DefaultBroadcastAddresses
-  ): IO[SocketException, Topology] =
-    ZIO.fromEither(from(interfaces, defaultBroadcast))
+    networkInterfaces: Iterable[NetworkInterface],
+    defaultBroadcastAddresses: Set[InetAddress] = DefaultBroadcastAddresses
+  ): UIO[Topology] =
+    for
+      interfaces <- ZIO.foldLeft(networkInterfaces)(Vector.empty[Interface]) { (interfaces, interface) =>
+        for mac <- getMacIfUpAndNotLoopback(interface) yield
+          mac.fold(interfaces) { mac =>
+            interfaces ++ interface.getInterfaceAddresses.asScala.toVector.flatMap(Interface.from(mac, _))
+          }
+      }
+    yield Topology(interfaces.toList, defaultBroadcastAddresses)
 
   /**
-   * Returns the hexadecimal MAC address for an interface if valid.
+   * Inspects a network address and returns its MAC address if it is up and not the loopback address.
    *
-   * @param i The network interface to inspect.
-   * @return The MAC address in hexadecimal if available.
+   * @param interface The network interface to inspect.
+   * @return The MAC address of the network interface if it is up and not the loopback address.
    */
-  private def macOf(i: NetworkInterface): Option[String] =
-    Option(i.getHardwareAddress).filter(_.length == 6).map(java.util.HexFormat.of().formatHex(_))
+  private def getMacIfUpAndNotLoopback(interface: NetworkInterface): UIO[Option[String]] =
+    for
+      hardwareAddress <- ZIO.attemptBlocking {
+        if interface.isUp && !interface.isLoopback then Option(interface.getHardwareAddress) else None
+      }.catchAllCause(
+        ZIO.logWarningCause(s"Failed to inspect network interface: ${interface.getDisplayName}.", _).map(_ => None)
+      )
+    yield hardwareAddress.filter(_.length == 6).map(HexFormat.of.formatHex(_).toLowerCase)
