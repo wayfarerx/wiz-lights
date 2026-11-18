@@ -28,22 +28,18 @@ import zio.{IO, UIO, ZIO}
 /**
  * The topology of the local network.
  *
- * @param interfaces       The active local network interfaces.
- * @param defaultBroadcast The default broadcast addresses to use when none are discovered.
+ * @param interfaces                The active network interfaces.
+ * @param defaultBroadcastAddresses The default broadcast addresses to use when none are discovered.
  */
 case class Topology(
   interfaces: List[Interface] = Nil,
-  defaultBroadcast: Set[InetAddress] = Topology.DefaultBroadcastAddresses
+  defaultBroadcastAddresses: Set[InetAddress] = Topology.DefaultBroadcastAddresses
 ):
 
   /** The available broadcast addresses. */
-  def broadcastAddresses: Set[InetAddress] =
-    val discovered = interfaces.flatMap(_.broadcastAddress).toSet
-    if discovered.nonEmpty then discovered else defaultBroadcast
-
-  /** Returns the default local network interface if available. */
-  def localInterface: Option[Interface] =
-    interfaces.headOption
+  lazy val broadcastAddresses: Set[InetAddress] =
+    val discovered = interfaces.flatMap(_.broadcastAddress)
+    if discovered.nonEmpty then discovered.toSet else defaultBroadcastAddresses
 
   /**
    * Returns the local network interface for communicating with the specified target if available.
@@ -51,21 +47,8 @@ case class Topology(
    * @param target The destination address of the target device.
    * @return The local network interface for communicating with the target if available.
    */
-  def localInterface(target: InetAddress): Option[Interface] =
-    interfaces.find(_.targets(target)).orElse(localInterface)
-
-  /** Returns the default local MAC address and internet address if available. */
-  def localhost: Option[(String, String)] =
-    localInterface.map(i => i.macAddress -> i.ipAddress.getHostAddress)
-
-  /**
-   * Returns the local MAC address and internet address for communicating with the specified target if available.
-   *
-   * @param target The destination address of the target device.
-   * @return The local MAC address and internet address for the target if available.
-   */
-  def localhost(target: InetAddress): Option[(String, String)] =
-    localInterface(target).map(i => i.macAddress -> i.ipAddress.getHostAddress)
+  def interfaceFor(target: InetAddress): Option[Interface] =
+    interfaces.find(_.targets(target))
 
   /**
    * Resolves the destination addresses for an outgoing message.
@@ -83,8 +66,7 @@ case class Topology(
 object Topology:
 
   /** The default broadcast addresses. */
-  val DefaultBroadcastAddresses: Set[InetAddress] =
-    Set(InetAddress.ofLiteral("255.255.255.255"))
+  val DefaultBroadcastAddresses: Set[InetAddress] = Set(InetAddress.ofLiteral("255.255.255.255"))
 
   /**
    * Discovers the local network topology.

@@ -35,8 +35,8 @@ case class Interface(
   broadcastAddress: Option[InetAddress] = None
 ):
 
-  /** Returns true if this interface has an associated broadcast address. */
-  def canBroadcast: Boolean = broadcastAddress.isDefined
+  /** The MAC address and IP address of this interface. */
+  lazy val macAndIpAddresses: (String, String) = macAddress -> ipAddress.getHostAddress
 
   /**
    * Returns true if the specified target internet address is on the same subnet as this interface.

@@ -82,11 +82,11 @@ final class NetworkLive private[network](
 
   /* Return the default local MAC address and internet address if available. */
   override def localhost: UIO[Option[(String, String)]] =
-    topology.get.map(_.localhost)
+    topology.get.map(_.interfaces.headOption.map(i => i.macAddress -> i.ipAddress.getHostAddress))
 
   /* Return the local MAC address and internet address for communicating with the specified target if available. */
   override def localhost(target: InetAddress): UIO[Option[(String, String)]] =
-    topology.get.map(_.localhost(target))
+    topology.get.map(_.interfaceFor(target).map(_.macAndIpAddresses))
 
   /* Publish a command message on the command port. */
   override def publish(message: Outgoing): UIO[Unit] =
@@ -117,7 +117,7 @@ object NetworkLive:
 
   /** The default network interface discovery mechanism. */
   private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery =
-    Topology.discover.orDie
+    Topology.discover().orDie
 
   /** The layer that provides the default network service. */
   val layer: RLayer[Configuration, Network] = ZLayer.scoped {
