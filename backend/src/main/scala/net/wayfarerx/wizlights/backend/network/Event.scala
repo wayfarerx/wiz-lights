@@ -23,15 +23,19 @@ import java.net.InetAddress
 /**
  * Base type for changes to the local network interfaces between versions of the network topology.
  *
- * A local network interface is identified by its MAC address and IP address.
+ * A change to the IP address or subnet of an interface is reported as the deactivation of the old interface followed
+ * by the activation of the new one.
  */
 sealed trait Event:
 
   /** The MAC address of the affected interface in hexadecimal. */
   def macAddress: String
 
-  /** The IP address of the affected interface in the topology where it is present, preferring the new topology. */
+  /** The IP address of the affected interface. */
   def ipAddress: InetAddress
+
+  /** The subnet prefix length of the affected interface. */
+  def prefixLength: Int
 
 /**
  * Definitions of the supported network topology events.
@@ -39,42 +43,19 @@ sealed trait Event:
 object Event:
 
   /**
-   * An interface that is present in the new topology but not in the old one.
+   * An interface that has become available, so devices on its subnet should be rediscovered and registered with.
    *
-   * @param macAddress   The MAC address of the added interface in hexadecimal.
-   * @param ipAddress    The IP address of the added interface.
-   * @param prefixLength The subnet prefix length of the added interface.
+   * @param macAddress   The MAC address of the activated interface in hexadecimal.
+   * @param ipAddress    The IP address of the activated interface.
+   * @param prefixLength The subnet prefix length of the activated interface.
    */
-  case class Added(macAddress: String, ipAddress: InetAddress, prefixLength: Int) extends Event
+  case class Activated(macAddress: String, ipAddress: InetAddress, prefixLength: Int) extends Event
 
   /**
-   * An interface that is present in the old topology but not in the new one.
+   * An interface that is no longer available, so devices reached through it should be marked offline.
    *
-   * @param macAddress The MAC address of the removed interface in hexadecimal.
-   * @param ipAddress  The IP address of the removed interface.
+   * @param macAddress   The MAC address of the deactivated interface in hexadecimal.
+   * @param ipAddress    The IP address of the deactivated interface.
+   * @param prefixLength The subnet prefix length of the deactivated interface.
    */
-  case class Removed(macAddress: String, ipAddress: InetAddress) extends Event
-
-  /**
-   * An interface that is present in both topologies but whose subnet prefix length has changed.
-   *
-   * @param macAddress   The MAC address of the resized interface in hexadecimal.
-   * @param ipAddress    The IP address of the resized interface.
-   * @param prefixLength The new subnet prefix length of the resized interface.
-   */
-  case class Resized(macAddress: String, ipAddress: InetAddress, prefixLength: Int) extends Event
-
-  /**
-   * An interface whose IP address in the old topology has been replaced by a new IP address in the new one.
-   *
-   * @param macAddress        The MAC address of the readdressed interface in hexadecimal.
-   * @param previousIpAddress The IP address of the readdressed interface in the old topology.
-   * @param ipAddress         The IP address of the readdressed interface in the new topology.
-   * @param prefixLength      The subnet prefix length of the readdressed interface in the new topology.
-   */
-  case class Readdressed(
-    macAddress: String,
-    previousIpAddress: InetAddress,
-    ipAddress: InetAddress,
-    prefixLength: Int
-  ) extends Event
+  case class Deactivated(macAddress: String, ipAddress: InetAddress, prefixLength: Int) extends Event
