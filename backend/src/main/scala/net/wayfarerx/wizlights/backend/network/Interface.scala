@@ -28,7 +28,7 @@ import java.net.{InetAddress, InterfaceAddress}
  * @param prefixLength     The subnet prefix length (e.g., 24 for a /24 subnet).
  * @param broadcastAddress The optional broadcast address of the interface subnet.
  */
-case class Interface private(
+private[network] case class Interface private(
   macAddress: String,
   ipAddress: InetAddress,
   prefixLength: Int,
@@ -41,7 +41,7 @@ case class Interface private(
 /**
  * Definitions associated with local network interfaces.
  */
-object Interface:
+private[network] object Interface:
 
   /**
    * Attempts to create a local network interface from a MAC address and interface address.

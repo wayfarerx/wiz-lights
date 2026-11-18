@@ -31,7 +31,7 @@ import zio.{IO, UIO, ZIO}
  * @param interfaces                The active network interfaces.
  * @param defaultBroadcastAddresses The default broadcast addresses to use when none are discovered.
  */
-case class Topology(
+private[network] case class Topology private(
   interfaces: List[Interface] = Nil,
   defaultBroadcastAddresses: Set[InetAddress] = Topology.DefaultBroadcastAddresses
 ):
@@ -63,8 +63,8 @@ case class Topology(
    * @return The local network interface for communicating with the target if available.
    */
   def interfaceFor(target: InetAddress): Option[Interface] =
-    ipv4Address(target).flatMap { address =>
-      subnets.iterator.flatMap((mask, networks) => networks.get(address & mask)).nextOption()
+    ipv4Address(target).flatMap { ipv4Address =>
+      subnets.iterator.flatMap((mask, networks) => networks.get(ipv4Address & mask)).nextOption()
     }
 
   /**
@@ -80,7 +80,7 @@ case class Topology(
 /**
  * Definitions associated with network topologies.
  */
-object Topology:
+private[network] object Topology:
 
   /** The default broadcast addresses. */
   val DefaultBroadcastAddresses: Set[InetAddress] = Set(InetAddress.ofLiteral("255.255.255.255"))

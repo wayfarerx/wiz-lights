@@ -72,9 +72,6 @@ private[network] final class Socket private[network](port: Int, channel: Channel
  */
 private[network] object Socket:
 
-  /** An event emitted by the underlying network stack. */
-  private[network] type Event = (InetAddress, ByteBuffer)
-
   /**
    * Creates a new network socket.
    *
@@ -126,7 +123,7 @@ private[network] object Socket:
    * @param event The address and payload of the received packet.
    * @return A new message if one can be read.
    */
-  private[network] def read(event: Event): UIO[Option[Incoming]] = {
+  private[network] def read(event: (InetAddress, ByteBuffer)): UIO[Option[Incoming]] = {
     val (address, payload) = event
     for
       text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
@@ -141,10 +138,10 @@ private[network] object Socket:
   private[network] final class Handler extends SimpleChannelInboundHandler[DatagramPacket]:
 
     /** The callback to emit to the stream. */
-    @volatile private var callback: Option[ZStream.Emit[Any, Throwable, Event, Unit]] = None
+    @volatile private var callback: Option[ZStream.Emit[Any, Throwable, (InetAddress, ByteBuffer), Unit]] = None
 
     /** The stream of packets received by this handler. */
-    val stream: ZStream[Any, Throwable, Event] = ZStream.async(emit => callback = Some(emit))
+    val stream: ZStream[Any, Throwable, (InetAddress, ByteBuffer)] = ZStream.async(emit => callback = Some(emit))
 
     /* Forward the datagram to the registered callback. */
     override def channelRead0(context: ChannelHandlerContext, packet: DatagramPacket): Unit = callback.foreach {

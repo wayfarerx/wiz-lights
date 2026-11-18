@@ -24,6 +24,7 @@ import scala.concurrent.duration.*
 
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.{EventLoopGroup, MultiThreadIoEventLoopGroup}
+
 import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Schedule, Scope, Task, UIO, URIO, ZIO, ZLayer}
 import zio.stream.{UStream, ZStream}
 
@@ -161,7 +162,8 @@ object NetworkLive:
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
       refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
-      topology <- Ref.make[Topology](Topology())
+      initialTopology <- Topology.make(Nil)
+      topology <- Ref.make[Topology](initialTopology)
       _ <- refreshNetworkInfo(topology, interfaceChanges, interfaceDiscovery)
       _ <- refreshNetworkInfo(topology, interfaceChanges, interfaceDiscovery)
         .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
