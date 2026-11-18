@@ -44,8 +44,7 @@ lazy val api = crossProject(JSPlatform, JVMPlatform)
       "dev.zio" %%% "zio-test-sbt" % zioVersion % Test,
       "dev.zio" %%% "zio-test-magnolia" % zioVersion % Test
     ),
-    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-    idePackagePrefix := Some("net.wayfarerx.wizlights")
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
 
 lazy val apiJVM = api.jvm
@@ -71,8 +70,7 @@ lazy val backend = (project in file("backend"))
       ZioTestSbt,
       ZioTestMagnolia
     ),
-    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-    idePackagePrefix := Some("net.wayfarerx.wizlights.backend")
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
   .dependsOn(apiJVM)
 
@@ -96,8 +94,7 @@ lazy val server = (project in file("server"))
       ZioTestSbt,
       ZioTestMagnolia
     ),
-    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework"),
-    idePackagePrefix := Some("net.wayfarerx.wizlights.server")
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
   .dependsOn(backend)
 
