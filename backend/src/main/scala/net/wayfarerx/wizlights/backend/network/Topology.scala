@@ -37,9 +37,24 @@ case class Topology(
 ):
 
   /** The available broadcast addresses. */
-  lazy val broadcastAddresses: Set[InetAddress] =
-    val discovered = interfaces.flatMap(_.broadcastAddress)
-    if discovered.nonEmpty then discovered.toSet else defaultBroadcastAddresses
+  private lazy val broadcastAddresses: Set[InetAddress] =
+    interfaces.flatMap(_.broadcastAddress) match
+      case Nil => defaultBroadcastAddresses
+      case all if all.size == interfaces.size => all.toSet
+      case some => some.toSet ++ defaultBroadcastAddresses
+
+  /**
+   * The IPv4 interfaces indexed by subnet, as pairs of subnet mask and network address to interface, ordered from the
+   * longest prefix to the shortest. Within a subnet the first interface in list order is retained.
+   */
+  private lazy val subnets: Vector[(Int, Map[Int, Interface])] =
+    interfaces.foldRight(Map.empty[Int, Map[Int, Interface]]) { (interface, result) =>
+      ipv4Address(interface.ipAddress).fold(result) { address =>
+        val prefixLength = Math.max(0, Math.min(32, interface.prefixLength))
+        val networks = result.getOrElse(prefixLength, Map.empty)
+        result.updated(prefixLength, networks.updated(address & subnetMaskFor(prefixLength), interface))
+      }
+    }.toVector.sortBy(-_._1).map((prefixLength, networks) => subnetMaskFor(prefixLength) -> networks)
 
   /**
    * Returns the local network interface for communicating with the specified target if available.
@@ -48,7 +63,9 @@ case class Topology(
    * @return The local network interface for communicating with the target if available.
    */
   def interfaceFor(target: InetAddress): Option[Interface] =
-    interfaces.find(_.targets(target))
+    ipv4Address(target).flatMap { address =>
+      subnets.iterator.flatMap((mask, networks) => networks.get(address & mask)).nextOption()
+    }
 
   /**
    * Resolves the destination addresses for an outgoing message.
@@ -94,9 +111,9 @@ object Topology:
   ): UIO[Topology] =
     for
       interfaces <- ZIO.foldLeft(networkInterfaces)(Vector.empty[Interface]) { (interfaces, interface) =>
-        for mac <- getMacIfUpAndNotLoopback(interface) yield
-          mac.fold(interfaces) { mac =>
-            interfaces ++ interface.getInterfaceAddresses.asScala.toVector.flatMap(Interface.from(mac, _))
+        for macAddress <- getMacIfUpAndNotLoopback(interface) yield
+          macAddress.fold(interfaces) { macAddress =>
+            interfaces ++ interface.getInterfaceAddresses.asScala.toVector.flatMap(Interface.from(macAddress, _))
           }
       }
     yield Topology(interfaces.toList, defaultBroadcastAddresses)
