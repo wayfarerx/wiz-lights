@@ -19,13 +19,14 @@ package backend
 package network
 
 import java.net.{InetAddress, InterfaceAddress}
+import java.nio.ByteBuffer
 
 /**
  * Information about a local network interface.
  *
  * @param macAddress       The MAC address of the interface in hexadecimal.
- * @param ipAddress        The IP address of the interface.
- * @param prefixLength     The subnet prefix length (e.g., 24 for a /24 subnet).
+ * @param ipAddress        The IPv4 address of the interface.
+ * @param prefixLength     The subnet prefix length in the range 0 - 32 (e.g., 24 for a /24 subnet).
  * @param broadcastAddress The optional broadcast address of this interface.
  */
 private[network] case class Interface private(
@@ -34,6 +35,9 @@ private[network] case class Interface private(
   prefixLength: Int,
   broadcastAddress: Option[InetAddress] = None
 ):
+
+  /** The integer representation of the IPv4 address of this interface. */
+  lazy val ipv4Address: Int = ByteBuffer.wrap(ipAddress.getAddress).getInt
 
   /** The MAC address and IP address of this interface. */
   lazy val macAndIpAddresses: (String, String) = macAddress -> ipAddress.getHostAddress
@@ -48,9 +52,11 @@ private[network] object Interface:
    *
    * @param macAddress       The MAC address of the interface.
    * @param interfaceAddress The interface address to inspect.
-   * @return The local network interface if the address is a valid IPv4 address.
+   * @return The local network interface if the address is a valid IPv4 address, with its prefix length clamped to the
+   *         range 0 - 32.
    */
   def from(macAddress: String, interfaceAddress: InterfaceAddress): Option[Interface] =
     Option(interfaceAddress.getAddress).filter(_.getAddress.length == 4).map { inetAddress =>
-      Interface(macAddress, inetAddress, interfaceAddress.getNetworkPrefixLength, Option(interfaceAddress.getBroadcast))
+      val prefixLength = Math.max(0, Math.min(32, interfaceAddress.getNetworkPrefixLength.toInt))
+      Interface(macAddress, inetAddress, prefixLength, Option(interfaceAddress.getBroadcast))
     }

@@ -28,20 +28,15 @@ import zio.{IO, UIO, ZIO}
 /**
  * The topology of the local network.
  *
- * @param interfaces                The active network interfaces.
- * @param defaultBroadcastAddresses The default broadcast addresses to use when none are discovered.
+ * @param interfaces The active network interfaces.
  */
-private[network] case class Topology private(
-  interfaces: List[Interface] = Nil,
-  defaultBroadcastAddresses: Set[InetAddress] = Topology.DefaultBroadcastAddresses
-):
+private[network] case class Topology private(interfaces: List[Interface]):
 
-  /** The available broadcast addresses. */
+  /** The available broadcast addresses, or the default broadcast addresses if none are discovered. */
   private lazy val broadcastAddresses: Set[InetAddress] =
     interfaces.flatMap(_.broadcastAddress) match
-      case Nil => defaultBroadcastAddresses
-      case all if all.size == interfaces.size => all.toSet
-      case some => some.toSet ++ defaultBroadcastAddresses
+      case Nil => Topology.DefaultBroadcastAddresses
+      case addresses => addresses.toSet
 
   /**
    * The IPv4 interfaces indexed by subnet, as pairs of subnet mask and network address to interface, ordered from the
@@ -49,11 +44,9 @@ private[network] case class Topology private(
    */
   private lazy val subnets: Vector[(Int, Map[Int, Interface])] =
     interfaces.foldRight(Map.empty[Int, Map[Int, Interface]]) { (interface, result) =>
-      ipv4Address(interface.ipAddress).fold(result) { address =>
-        val prefixLength = Math.max(0, Math.min(32, interface.prefixLength))
-        val networks = result.getOrElse(prefixLength, Map.empty)
-        result.updated(prefixLength, networks.updated(address & subnetMaskFor(prefixLength), interface))
-      }
+      val networks = result.getOrElse(interface.prefixLength, Map.empty)
+      val network = interface.ipv4Address & subnetMaskFor(interface.prefixLength)
+      result.updated(interface.prefixLength, networks.updated(network, interface))
     }.toVector.sortBy(-_._1).map((prefixLength, networks) => subnetMaskFor(prefixLength) -> networks)
 
   /**
@@ -102,30 +95,21 @@ private[network] object Topology:
   /** An empty topology. */
   val Empty: Topology = Topology(Nil)
 
-  /**
-   * Discovers the local network topology.
-   *
-   * @param defaultBroadcastAddresses The default broadcast addresses to use if none are found.
-   */
-  def discover(defaultBroadcastAddresses: Set[InetAddress] = DefaultBroadcastAddresses): IO[SocketException, Topology] =
+  /** Discovers the local network topology. */
+  def discover(): IO[SocketException, Topology] =
     for
-      interfaces <- ZIO.attemptBlocking[Seq[NetworkInterface]](
-        Option(NetworkInterface.getNetworkInterfaces).fold(Seq.empty)(_.asScala.toSeq)
-      ).refineToOrDie[SocketException]
-      result <- make(interfaces, defaultBroadcastAddresses)
+      interfaces <- ZIO.attemptBlocking(NetworkInterface.getNetworkInterfaces.asScala.toSeq)
+        .refineToOrDie[SocketException]
+      result <- make(interfaces)
     yield result
 
   /**
    * Creates a network topology from the specified network interfaces.
    *
-   * @param networkInterfaces          The network interfaces to inspect.
-   * @param defaultBroadcastAddresses  The default broadcast addresses to use if none are found.
+   * @param networkInterfaces The network interfaces to inspect.
    * @return The constructed network topology.
    */
-  def make(
-    networkInterfaces: Iterable[NetworkInterface],
-    defaultBroadcastAddresses: Set[InetAddress] = DefaultBroadcastAddresses
-  ): UIO[Topology] =
+  def make(networkInterfaces: Iterable[NetworkInterface]): UIO[Topology] =
     for
       interfaces <- ZIO.foldLeft(networkInterfaces)(Vector.empty[Interface]) { (interfaces, interface) =>
         for macAddress <- getMacIfUpAndNotLoopback(interface) yield
@@ -133,7 +117,7 @@ private[network] object Topology:
             interfaces ++ interface.getInterfaceAddresses.asScala.toVector.flatMap(Interface.from(macAddress, _))
           }
       }
-    yield Topology(interfaces.toList, defaultBroadcastAddresses)
+    yield Topology(interfaces.toList)
 
   /**
    * Inspects a network address and returns its MAC address if it is up and not the loopback address.

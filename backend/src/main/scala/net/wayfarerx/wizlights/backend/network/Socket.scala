@@ -60,7 +60,7 @@ private[network] final class Socket(port: Int, channel: Channel):
           )
           channel.writeAndFlush(packet).addListener { (future: ChannelFuture) =>
             if future.isSuccess then cb(ZIO.unit)
-            else cb(ZIO.fail(Option(future.cause).getOrElse(RuntimeException("Channel write failed"))))
+            else cb(ZIO.fail(future.cause))
           }
         }.catchAllCause(ZIO.logWarningCause(_))
       }
