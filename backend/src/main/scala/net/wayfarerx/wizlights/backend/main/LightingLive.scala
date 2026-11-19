@@ -932,7 +932,7 @@ object LightingLive:
         .runDrain
         .forkScoped
     }
-    _ <- network.interfacesChanged.flatMap { stream =>
+    _ <- network.events.flatMap { stream =>
       stream.debounce(Duration.fromMillis(500)).mapZIO(_ => service.forceRegister *> service.discover).runDrain
     }.forkScoped
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))

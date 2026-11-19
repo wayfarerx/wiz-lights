@@ -24,16 +24,13 @@ import java.nio.charset.StandardCharsets
 
 import io.circe.parser.parse as parseJson
 import io.circe.syntax.*
-
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-
-import zio.{Chunk, RIO, Scope, Task, UIO, ZIO}
+import zio.{Chunk, Hub, RIO, Scope, Task, UIO, ZIO}
 import zio.stream.ZStream
-
 import protocol.{Request, Response}
 
 /**
@@ -77,13 +74,13 @@ private[network] object Socket:
    *
    * @param port           The network port to connect to.
    * @param eventLoopGroup The event loop group to use.
-   * @param received       The function to call when an incoming message is received.
+   * @param received       The hub to publish to when an incoming message is received.
    * @return A new network socket.
    */
-  def make(port: Int, eventLoopGroup: EventLoopGroup, received: Incoming => UIO[Unit]): RIO[Scope, Socket] =
+  def make(port: Int, eventLoopGroup: EventLoopGroup, received: Hub[Incoming]): RIO[Scope, Socket] =
     val handler = Handler()
     for
-      _ <- handler.stream.mapZIO(read).collectSome.foreach(received).forkScoped
+      _ <- handler.stream.mapZIO(read).collectSome.foreach(received.publish).forkScoped
       channel <- ZIO.acquireRelease(acquireChannel(port, eventLoopGroup, handler))(releaseChannel)
     yield Socket(port, channel)
 

@@ -57,42 +57,42 @@ trait Network:
   def subscribe: URIO[Scope, UStream[Incoming]]
 
   /**
-   * Subscribes to events describing changes to the local network interfaces.
+   * Subscribes to events describing changes to the local network topology.
    *
-   * @return A subscription to interface change events.
+   * @return A subscription to topology change events.
    */
-  def interfacesChanged: URIO[Scope, UStream[Event]]
+  def events: URIO[Scope, UStream[Event]]
 
 /**
  * The live implementation of the network service.
  *
- * @param topology         The cached local network topology.
- * @param outgoing         The queue of outgoing messages.
- * @param incoming         The hub of incoming messages.
- * @param interfaceChanges The hub of interface change events.
+ * @param topologyRef   The cached local network topology.
+ * @param outgoingQueue The queue of outgoing messages.
+ * @param incomingHub   The hub of incoming messages.
+ * @param eventHub      The hub of topology change events.
  */
 final class NetworkLive private[network](
-  topology: Ref[Topology],
-  outgoing: Queue[Outgoing],
-  incoming: Hub[Incoming],
-  interfaceChanges: Hub[Event]
+  topologyRef: Ref.Synchronized[Topology],
+  outgoingQueue: Queue[Outgoing],
+  incomingHub: Hub[Incoming],
+  eventHub: Hub[Event]
 ) extends Network:
 
   /* Return the local MAC address and internet address for communicating with the specified target if available. */
   override def localhost(target: InetAddress): UIO[Option[(String, String)]] =
-    topology.get.map(_.interfaceFor(target).map(_.macAndIpAddresses))
+    topologyRef.get.map(_.interfaceFor(target).map(_.macAndIpAddresses))
 
   /* Publish a command message on the command port. */
   override def publish(message: Outgoing): UIO[Unit] =
-    outgoing.offer(message).ignore
+    outgoingQueue.offer(message).ignore
 
   /* Subscribe to responses received across all response ports. */
   override def subscribe: URIO[Scope, UStream[Incoming]] =
-    ZStream.fromHubScoped(incoming)
+    ZStream.fromHubScoped(incomingHub)
 
-  /* Subscribe to events describing changes to the local network interfaces. */
-  override def interfacesChanged: URIO[Scope, UStream[Event]] =
-    ZStream.fromHubScoped(interfaceChanges)
+  /* Subscribes to events describing changes to the local network topology. */
+  override def events: URIO[Scope, UStream[Event]] =
+    ZStream.fromHubScoped(eventHub)
 
 /**
  * Factory for live network services.
@@ -101,17 +101,6 @@ object NetworkLive:
 
   /** The golden ratio for staggering broadcast address refreshes. */
   private[network] val GoldenRatio = (1.0 + Math.sqrt(5.0)) / 2.0
-
-  /** The default broadcast addresses. */
-  private[network] val DefaultBroadcastAddresses: UIO[Set[InetAddress]] =
-    ZIO.succeed(Topology.DefaultBroadcastAddresses)
-
-  /** Discovers local network interfaces and broadcast addresses. */
-  private[network] type InterfaceDiscovery = UIO[Topology]
-
-  /** The default network interface discovery mechanism. */
-  private[network] val DefaultInterfaceDiscovery: InterfaceDiscovery =
-    Topology.discover().orDie
 
   /** The layer that provides the default network service. */
   val layer: RLayer[Configuration, Network] = ZLayer.scoped {
@@ -135,7 +124,6 @@ object NetworkLive:
    * @param commandPort        The network port to send commands on.
    * @param listenerPort       The network port to also listen on.
    * @param discoveryInterval  The interval to wait between discovering devices.
-   * @param interfaceDiscovery The mechanism to discover local interfaces and broadcast addresses.
    * @return A live network representation.
    */
   def make(
@@ -143,25 +131,22 @@ object NetworkLive:
     incomingWindow: Int,
     commandPort: Int,
     listenerPort: Int,
-    discoveryInterval: FiniteDuration,
-    interfaceDiscovery: InterfaceDiscovery = DefaultInterfaceDiscovery
+    discoveryInterval: FiniteDuration
   ): RIO[Scope, Network] =
+    val refreshTopologyInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
     for
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
-      outgoing <- Queue.sliding[Outgoing](outgoingWindow)
-      incoming <- Hub.sliding[Incoming](incomingWindow)
-      interfaceChanges <- Hub.sliding[Event](16)
-      received = incoming.publish(_: Incoming).ignore
-      commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
-      listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
-      refreshNetworkInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
-      initialTopology <- Topology.make(Nil)
-      topology <- Ref.make[Topology](initialTopology)
-      _ <- refreshNetworkInfo(topology, interfaceChanges, interfaceDiscovery)
-      _ <- refreshNetworkInfo(topology, interfaceChanges, interfaceDiscovery)
-        .repeat(Schedule.spaced(refreshNetworkInterval)).delay(refreshNetworkInterval).forkScoped
-      _ <- ZStream.fromQueue(outgoing).foreach(write(topology, commandSocket, _)).forkScoped
-    yield NetworkLive(topology, outgoing, incoming, interfaceChanges)
+      outgoingQueue <- Queue.sliding[Outgoing](outgoingWindow)
+      incomingHub <- Hub.sliding[Incoming](incomingWindow)
+      eventHub <- Hub.sliding[Event](16)
+      commandSocket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
+      listenerSocket <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
+      topologyRef <- Ref.Synchronized.make[Topology](Topology.Empty)
+      _ <- refreshTopology(topologyRef, eventHub)
+      _ <- refreshTopology(topologyRef, eventHub)
+        .repeat(Schedule.spaced(refreshTopologyInterval)).delay(refreshTopologyInterval).forkScoped
+      _ <- ZStream.fromQueue(outgoingQueue).foreach(write(topologyRef, commandSocket, _)).forkScoped
+    yield NetworkLive(topologyRef, outgoingQueue, incomingHub, eventHub)
 
   /**
    * Acquires an event loop group.
@@ -180,30 +165,30 @@ object NetworkLive:
     ZIO.attemptBlocking(group.close()).ignore
 
   /**
-   * Refreshes the cached network information.
+   * Refreshes the cached network topology.
    *
-   * @param topologyRef        The reference to the current network topology.
-   * @param interfaceChanges   The hub of interface change events.
-   * @param interfaceDiscovery The mechanism to discover local interfaces and broadcast addresses.
+   * @param topologyRef The reference to the current network topology.
+   * @param eventHub    The hub of topology change events.
    */
-  private[network] def refreshNetworkInfo(
-    topologyRef: Ref[Topology],
-    interfaceChanges: Hub[Event],
-    interfaceDiscovery: InterfaceDiscovery = DefaultInterfaceDiscovery
-  ): UIO[Unit] = for
-    newTopology <- interfaceDiscovery
-    oldTopology <- topologyRef.getAndSet(newTopology)
-    events = oldTopology.diff(newTopology)
-    _ <- if events.nonEmpty then interfaceChanges.publishAll(events).ignore else ZIO.unit
-  yield ()
+  private[network] def refreshTopology(topologyRef: Ref.Synchronized[Topology], eventHub: Hub[Event]): UIO[Unit] =
+    for
+      newTopology <- Topology.discover().map(Some(_)).catchAllCause {
+        ZIO.logWarningCause(s"Failed to discover the local network topology.", _).map(_ => None)
+      }
+      _ <- newTopology.fold(ZIO.unit) { newTopology =>
+        topologyRef.modifyZIO { oldTopology =>
+          eventHub.publishAll(oldTopology.diff(newTopology)).map(_ -> newTopology)
+        }
+      }
+    yield ()
 
   /**
    * Writes a message to the specified socket.
    *
-   * @param topology The live network topology.
-   * @param socket   The socket to write to.
-   * @param message  The message to write to the socket.
+   * @param topologyRef The live network topology.
+   * @param socket      The socket to write to.
+   * @param message     The message to write to the socket.
    */
-  private[network] def write(topology: Ref[Topology], socket: Socket, message: Outgoing): UIO[Unit] =
-    topology.get.flatMap(t => socket(t.destinations(message), message.request))
+  private[network] def write(topologyRef: Ref.Synchronized[Topology], socket: Socket, message: Outgoing): UIO[Unit] =
+    topologyRef.get.flatMap(t => socket(t.destinations(message), message.request))
 

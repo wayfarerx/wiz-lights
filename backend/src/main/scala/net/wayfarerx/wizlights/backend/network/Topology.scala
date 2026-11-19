@@ -99,6 +99,9 @@ private[network] object Topology:
   /** The default broadcast addresses. */
   val DefaultBroadcastAddresses: Set[InetAddress] = Set(InetAddress.ofLiteral("255.255.255.255"))
 
+  /** An empty topology. */
+  val Empty: Topology = Topology(Nil)
+
   /**
    * Discovers the local network topology.
    *
