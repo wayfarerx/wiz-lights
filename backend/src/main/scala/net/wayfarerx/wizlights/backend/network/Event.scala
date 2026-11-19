@@ -21,10 +21,7 @@ package network
 import java.net.InetAddress
 
 /**
- * Base type for changes to the local network interfaces between versions of the network topology.
- *
- * A change to the IP address or subnet of an interface is reported as the deactivation of the old interface followed
- * by the activation of the new one.
+ * Base type for changes to the local network topology.
  */
 sealed trait Event:
 

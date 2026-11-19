@@ -26,7 +26,7 @@ import java.net.{InetAddress, InterfaceAddress}
  * @param macAddress       The MAC address of the interface in hexadecimal.
  * @param ipAddress        The IP address of the interface.
  * @param prefixLength     The subnet prefix length (e.g., 24 for a /24 subnet).
- * @param broadcastAddress The optional broadcast address of the interface subnet.
+ * @param broadcastAddress The optional broadcast address of this interface.
  */
 private[network] case class Interface private(
   macAddress: String,

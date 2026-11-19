@@ -24,13 +24,16 @@ import java.nio.charset.StandardCharsets
 
 import io.circe.parser.parse as parseJson
 import io.circe.syntax.*
+
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.*
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
+
 import zio.{Chunk, Hub, RIO, Scope, UIO, ZIO}
 import zio.stream.ZStream
+
 import protocol.{Request, Response}
 
 /**
@@ -120,7 +123,7 @@ private[network] object Socket:
     @volatile private var callback: Option[ZStream.Emit[Any, Throwable, (InetAddress, ByteBuffer), Unit]] = None
 
     /** The stream of packets received by this handler. */
-    val stream: ZStream[Any, Throwable, (InetAddress, ByteBuffer)] = ZStream.async(emit => callback = Some(emit))
+    lazy val stream: ZStream[Any, Throwable, (InetAddress, ByteBuffer)] = ZStream.async(emit => callback = Some(emit))
 
     /* Forward the datagram to the registered callback. */
     override def channelRead0(context: ChannelHandlerContext, packet: DatagramPacket): Unit = callback.foreach {

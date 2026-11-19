@@ -42,10 +42,9 @@ trait Network:
   def localhost(target: InetAddress): UIO[Option[(String, String)]]
 
   /**
-   * Publishes a command message on the command port.
+   * Publishes a message on the command port.
    *
    * @param message The outgoing message to publish.
-   * @return An effect that completes when the message is published.
    */
   def publish(message: Outgoing): UIO[Unit]
 
@@ -59,7 +58,7 @@ trait Network:
   /**
    * Subscribes to events describing changes to the local network topology.
    *
-   * @return A subscription to topology change events.
+   * @return A subscription to local network topology change events.
    */
   def events: URIO[Scope, UStream[Event]]
 
