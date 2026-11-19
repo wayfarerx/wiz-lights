@@ -932,9 +932,8 @@ object LightingLive:
         .runDrain
         .forkScoped
     }
-    _ <- network.events.flatMap { stream =>
-      stream.debounce(Duration.fromMillis(500)).mapZIO(_ => service.forceRegister *> service.discover).runDrain
-    }.forkScoped
+    _ <- network.events.debounce(Duration.fromMillis(500))
+      .mapZIO(_ => service.forceRegister *> service.discover).runDrain.forkScoped
     _ <- network.publish(Outgoing.Broadcast(GetPilotRequest()))
     _ <- network.publish(Outgoing.Broadcast(GetSystemConfigRequest()))
     _ <- if knownDevices.nonEmpty then

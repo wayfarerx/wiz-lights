@@ -25,13 +25,16 @@ import scala.concurrent.duration.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.MultiThreadIoEventLoopGroup
 
-import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Scope, UIO, URIO, ZIO, ZLayer}
-import zio.stream.{UStream, ZStream}
+import zio.{Duration, Hub, Queue, RIO, RLayer, Scope, UIO, URIO, ZIO, ZLayer}
+import zio.stream.{SubscriptionRef, UStream, ZStream}
 
 /**
  * A service that manages interaction with the network.
  */
 trait Network:
+
+  /** The stream of events describing changes to the local network topology. */
+  def events: UStream[Event]
 
   /**
    * Returns the local MAC address and internet address for communicating with the specified target if available.
@@ -55,27 +58,25 @@ trait Network:
    */
   def subscribe: URIO[Scope, UStream[Incoming]]
 
-  /**
-   * Subscribes to events describing changes to the local network topology.
-   *
-   * @return A subscription to local network topology change events.
-   */
-  def events: URIO[Scope, UStream[Event]]
-
 /**
  * The live implementation of the network service.
  *
  * @param topologyRef   The cached local network topology.
  * @param outgoingQueue The queue of outgoing messages.
  * @param incomingHub   The hub of incoming messages.
- * @param eventHub      The hub of topology change events.
  */
 final class NetworkLive private[network](
-  topologyRef: Ref[Topology],
+  topologyRef: SubscriptionRef[Topology],
   outgoingQueue: Queue[Outgoing],
-  incomingHub: Hub[Incoming],
-  eventHub: Hub[Event]
+  incomingHub: Hub[Incoming]
 ) extends Network:
+
+  /* The stream of events describing changes to the local network topology. */
+  override val events: UStream[Event] =
+    topologyRef.changes.zipWithPrevious.mapConcat {
+      case (Some(oldTopology), newTopology) => oldTopology.diff(newTopology)
+      case _ => Nil
+    }
 
   /* Return the local MAC address and internet address for communicating with the specified target if available. */
   override def localhost(target: InetAddress): UIO[Option[(String, String)]] =
@@ -88,10 +89,6 @@ final class NetworkLive private[network](
   /* Subscribe to responses received across all response ports. */
   override def subscribe: URIO[Scope, UStream[Incoming]] =
     ZStream.fromHubScoped(incomingHub)
-
-  /* Subscribes to events describing changes to the local network topology. */
-  override def events: URIO[Scope, UStream[Event]] =
-    ZStream.fromHubScoped(eventHub)
 
 /**
  * Factory for live network services.
@@ -108,7 +105,6 @@ object NetworkLive:
       network <- make(
         config.outgoingWindow,
         config.incomingWindow,
-        config.eventWindow,
         config.commandPort,
         config.listenerPort,
         config.discoveryInterval
@@ -121,7 +117,6 @@ object NetworkLive:
    *
    * @param outgoingWindow     The number of outgoing requests to keep in the network queue.
    * @param incomingWindow     The number of incoming responses to keep in the network hub.
-   * @param eventWindow        The number of network topology events to keep in the event hub.
    * @param commandPort        The network port to send commands on.
    * @param listenerPort       The network port to also listen on.
    * @param discoveryInterval  The interval to wait between discovering devices.
@@ -130,7 +125,6 @@ object NetworkLive:
   def make(
     outgoingWindow: Int,
     incomingWindow: Int,
-    eventWindow: Int,
     commandPort: Int,
     listenerPort: Int,
     discoveryInterval: FiniteDuration
@@ -142,25 +136,23 @@ object NetworkLive:
       }(group => ZIO.attemptBlocking(group.close()).ignore)
       outgoingQueue <- Queue.sliding[Outgoing](outgoingWindow)
       incomingHub <- Hub.sliding[Incoming](incomingWindow)
-      eventHub <- Hub.sliding[Event](eventWindow)
       socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
-      topologyRef <- Ref.make[Topology](Topology.Empty)
-      _ <- refreshTopology(topologyRef, eventHub)
-      _ <- (ZIO.sleep(refreshTopologyInterval) *> refreshTopology(topologyRef, eventHub)).forever.forkScoped
+      topologyRef <- SubscriptionRef.make[Topology](Topology.Empty)
+      _ <- refreshTopology(topologyRef)
+      _ <- (ZIO.sleep(refreshTopologyInterval) *> refreshTopology(topologyRef)).forever.forkScoped
       _ <- ZStream.fromQueue(outgoingQueue).foreach { message =>
         topologyRef.get.flatMap(topology => socket(topology.destinations(message), message.request))
       }.forkScoped
-    yield NetworkLive(topologyRef, outgoingQueue, incomingHub, eventHub)
+    yield NetworkLive(topologyRef, outgoingQueue, incomingHub)
 
   /**
    * Refreshes the cached network topology.
    *
    * @param topologyRef The reference to the current network topology.
-   * @param eventHub    The hub of topology change events.
    */
-  private[network] def refreshTopology(topologyRef: Ref[Topology], eventHub: Hub[Event]): UIO[Unit] =
-    Topology.discover().flatMap { newTopology =>
-      topologyRef.getAndSet(newTopology).flatMap(oldTopology => eventHub.publishAll(oldTopology.diff(newTopology)))
-    }.unit.catchAllCause(ZIO.logWarningCause("Failed to discover the local network topology.", _))
+  private[network] def refreshTopology(topologyRef: SubscriptionRef[Topology]): UIO[Unit] =
+    Topology.discover().flatMap(topologyRef.set).catchAllCause {
+      ZIO.logWarningCause("Failed to discover the local network topology.", _)
+    }
 
