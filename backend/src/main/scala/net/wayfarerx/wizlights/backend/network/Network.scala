@@ -33,9 +33,6 @@ import zio.stream.{UStream, ZStream}
  */
 trait Network:
 
-  /** Returns the default local MAC address and internet address if available. */
-  def localhost: UIO[Option[(String, String)]]
-
   /**
    * Returns the local MAC address and internet address for communicating with the specified target if available.
    *
@@ -80,10 +77,6 @@ final class NetworkLive private[network](
   incoming: Hub[Incoming],
   interfaceChanges: Hub[Event]
 ) extends Network:
-
-  /* Return the default local MAC address and internet address if available. */
-  override def localhost: UIO[Option[(String, String)]] =
-    topology.get.map(_.interfaces.headOption.map(i => i.macAddress -> i.ipAddress.getHostAddress))
 
   /* Return the local MAC address and internet address for communicating with the specified target if available. */
   override def localhost(target: InetAddress): UIO[Option[(String, String)]] =

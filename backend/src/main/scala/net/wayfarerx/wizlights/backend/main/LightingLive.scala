@@ -520,7 +520,7 @@ final class LightingLive private(
         for
           targetsWithLocal <- ZIO.foreach(unregisteredTargets.toList) { mac =>
             val targetIp = devs.get(mac).flatMap(_.inetAddress)
-            targetIp.fold(network.localhost)(network.localhost).map(mac -> _)
+            targetIp.fold(ZIO.none)(network.localhost).map(mac -> _)
           }
           _ <- ZIO.foreachDiscard(targetsWithLocal.groupBy(_._2)) {
             case (Some((localMac, localIp)), targets) =>
