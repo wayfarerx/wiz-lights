@@ -109,6 +109,7 @@ object NetworkLive:
       network <- make(
         config.outgoingWindow,
         config.incomingWindow,
+        config.eventWindow,
         config.commandPort,
         config.listenerPort,
         config.discoveryInterval
@@ -121,6 +122,7 @@ object NetworkLive:
    *
    * @param outgoingWindow     The number of outgoing requests to keep in the network queue.
    * @param incomingWindow     The number of incoming responses to keep in the network hub.
+   * @param eventWindow        The number of network topology events to keep in the event hub.
    * @param commandPort        The network port to send commands on.
    * @param listenerPort       The network port to also listen on.
    * @param discoveryInterval  The interval to wait between discovering devices.
@@ -129,6 +131,7 @@ object NetworkLive:
   def make(
     outgoingWindow: Int,
     incomingWindow: Int,
+    eventWindow: Int,
     commandPort: Int,
     listenerPort: Int,
     discoveryInterval: FiniteDuration
@@ -138,7 +141,7 @@ object NetworkLive:
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
       outgoingQueue <- Queue.sliding[Outgoing](outgoingWindow)
       incomingHub <- Hub.sliding[Incoming](incomingWindow)
-      eventHub <- Hub.sliding[Event](16)
+      eventHub <- Hub.sliding[Event](eventWindow)
       commandSocket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
       topologyRef <- Ref.Synchronized.make[Topology](Topology.Empty)

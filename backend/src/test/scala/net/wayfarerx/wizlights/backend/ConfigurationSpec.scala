@@ -36,6 +36,7 @@ object ConfigurationSpec extends ZIOSpecDefault:
       yield assertTrue(
         config.outgoingWindow == Configuration.DefaultOutgoingWindow,
         config.incomingWindow == Configuration.DefaultIncomingWindow,
+        config.eventWindow == Configuration.DefaultEventWindow,
         config.commandPort == Configuration.DefaultCommandPort,
         config.listenerPort == Configuration.DefaultListenerPort,
         config.discoveryInterval == Configuration.DefaultDiscoveryInterval,
@@ -55,6 +56,7 @@ object ConfigurationSpec extends ZIOSpecDefault:
         config <- Configuration.make(
           outgoingWindow = 100,
           incomingWindow = 1000,
+          eventWindow = 32,
           commandPort = 12345,
           listenerPort = 12346,
           discoveryInterval = 10.seconds,
@@ -66,6 +68,7 @@ object ConfigurationSpec extends ZIOSpecDefault:
       yield assertTrue(
         config.outgoingWindow == 100,
         config.incomingWindow == 1000,
+        config.eventWindow == 32,
         config.commandPort == 12345,
         config.listenerPort == 12346,
         config.discoveryInterval == 10.seconds,
@@ -77,8 +80,8 @@ object ConfigurationSpec extends ZIOSpecDefault:
         config.hashCode == config.hashCode,
         config.toString.contains("Configuration"),
         config match
-          case Configuration(ow, iw, cp, lp, di, rt, pt, rb, kd) =>
-            ow == 100 && iw == 1000 && cp == 12345 && lp == 12346 &&
+          case Configuration(ow, iw, ew, cp, lp, di, rt, pt, rb, kd) =>
+            ow == 100 && iw == 1000 && ew == 32 && cp == 12345 && lp == 12346 &&
               di == 10.seconds && rt == 2.minutes && pt == 1.minute &&
               rb == customBackoffs && kd == customDevices.toSet
       )

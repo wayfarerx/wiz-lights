@@ -28,6 +28,7 @@ import zio.{Task, ZIO}
  *
  * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
  * @param incomingWindow    The number of incoming responses to keep in the network hub.
+ * @param eventWindow       The number of network topology events to keep in the event hub.
  * @param commandPort       The network port to send commands on.
  * @param listenerPort      The network port to also listen on.
  * @param discoveryInterval The frequency of broadcast discovery attempts.
@@ -39,6 +40,7 @@ import zio.{Task, ZIO}
 case class Configuration private(
   outgoingWindow: Int,
   incomingWindow: Int,
+  eventWindow: Int,
   commandPort: Int,
   listenerPort: Int,
   discoveryInterval: FiniteDuration,
@@ -54,10 +56,13 @@ case class Configuration private(
 object Configuration:
 
   /** The default number of outgoing requests to keep in the network queue. */
-  val DefaultOutgoingWindow: Int = 50
+  val DefaultOutgoingWindow: Int = 64
 
   /** The default number of incoming responses to keep in the network hub. */
-  val DefaultIncomingWindow: Int = 500
+  val DefaultIncomingWindow: Int = 512
+
+  /** The default number of network topology events to keep in the event hub. */
+  val DefaultEventWindow: Int = 128
 
   /** The default network port to send commands on. */
   val DefaultCommandPort: Int = 38899
@@ -85,6 +90,7 @@ object Configuration:
    *
    * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
    * @param incomingWindow    The number of incoming responses to keep in the network hub.
+   * @param eventWindow       The number of network topology events to keep in the event hub.
    * @param commandPort       The network port to send commands on.
    * @param listenerPort      The network port to listen on.
    * @param discoveryInterval The frequency of broadcast discovery attempts.
@@ -97,6 +103,7 @@ object Configuration:
   def make(
     outgoingWindow: Int = DefaultOutgoingWindow,
     incomingWindow: Int = DefaultIncomingWindow,
+    eventWindow: Int = DefaultEventWindow,
     commandPort: Int = DefaultCommandPort,
     listenerPort: Int = DefaultListenerPort,
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
@@ -114,6 +121,7 @@ object Configuration:
       Configuration(
         outgoingWindow,
         incomingWindow,
+        eventWindow,
         commandPort,
         listenerPort,
         discoveryInterval,
