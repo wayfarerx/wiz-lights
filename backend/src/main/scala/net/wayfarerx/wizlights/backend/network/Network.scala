@@ -60,11 +60,11 @@ trait Network:
   def subscribe: URIO[Scope, UStream[Incoming]]
 
   /**
-   * Subscribes to notifications when the local network interfaces change.
+   * Subscribes to events describing changes to the local network interfaces.
    *
-   * @return A subscription to interface change notifications.
+   * @return A subscription to interface change events.
    */
-  def interfacesChanged: URIO[Scope, UStream[Unit]]
+  def interfacesChanged: URIO[Scope, UStream[Event]]
 
 /**
  * The live implementation of the network service.
@@ -72,13 +72,13 @@ trait Network:
  * @param topology         The cached local network topology.
  * @param outgoing         The queue of outgoing messages.
  * @param incoming         The hub of incoming messages.
- * @param interfaceChanges The hub of interface change notifications.
+ * @param interfaceChanges The hub of interface change events.
  */
 final class NetworkLive private[network](
   topology: Ref[Topology],
   outgoing: Queue[Outgoing],
   incoming: Hub[Incoming],
-  interfaceChanges: Hub[Unit]
+  interfaceChanges: Hub[Event]
 ) extends Network:
 
   /* Return the default local MAC address and internet address if available. */
@@ -97,8 +97,8 @@ final class NetworkLive private[network](
   override def subscribe: URIO[Scope, UStream[Incoming]] =
     ZStream.fromHubScoped(incoming)
 
-  /* Subscribe to notifications when the local network interfaces change. */
-  override def interfacesChanged: URIO[Scope, UStream[Unit]] =
+  /* Subscribe to events describing changes to the local network interfaces. */
+  override def interfacesChanged: URIO[Scope, UStream[Event]] =
     ZStream.fromHubScoped(interfaceChanges)
 
 /**
@@ -157,7 +157,7 @@ object NetworkLive:
       eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
       outgoing <- Queue.sliding[Outgoing](outgoingWindow)
       incoming <- Hub.sliding[Incoming](incomingWindow)
-      interfaceChanges <- Hub.sliding[Unit](16)
+      interfaceChanges <- Hub.sliding[Event](16)
       received = incoming.publish(_: Incoming).ignore
       commandSocket <- Socket.make(commandPort, eventLoopGroup, received)
       listenerSocket <- Socket.make(listenerPort, eventLoopGroup, received)
@@ -190,19 +190,18 @@ object NetworkLive:
    * Refreshes the cached network information.
    *
    * @param topologyRef        The reference to the current network topology.
-   * @param interfaceChanges   The hub of interface change notifications.
+   * @param interfaceChanges   The hub of interface change events.
    * @param interfaceDiscovery The mechanism to discover local interfaces and broadcast addresses.
    */
   private[network] def refreshNetworkInfo(
     topologyRef: Ref[Topology],
-    interfaceChanges: Hub[Unit],
+    interfaceChanges: Hub[Event],
     interfaceDiscovery: InterfaceDiscovery = DefaultInterfaceDiscovery
   ): UIO[Unit] = for
     newTopology <- interfaceDiscovery
     oldTopology <- topologyRef.getAndSet(newTopology)
-    _ <- if newTopology != oldTopology then
-      interfaceChanges.publish(()).ignore
-    else ZIO.unit
+    events = oldTopology.diff(newTopology)
+    _ <- if events.nonEmpty then interfaceChanges.publishAll(events).ignore else ZIO.unit
   yield ()
 
   /**

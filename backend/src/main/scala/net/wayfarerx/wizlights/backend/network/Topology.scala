@@ -77,6 +77,20 @@ private[network] case class Topology private(
     case Outgoing.Broadcast(_) => broadcastAddresses
     case Outgoing.Send(addresses, _) => addresses
 
+  /**
+   * Returns the events that describe the changes to the interfaces between this network topology and a newer one,
+   * with all deactivations preceding all activations. Changes to broadcast addresses are ignored.
+   *
+   * @param newTopology The newer network topology.
+   * @return The events that describe the changes to the interfaces between this and the newer network topology.
+   */
+  def diff(newTopology: Topology): List[Event] =
+    val oldInterfaces = interfaces.map(i => (i.macAddress, i.ipAddress, i.prefixLength)).distinct
+    val newInterfaces = newTopology.interfaces.map(i => (i.macAddress, i.ipAddress, i.prefixLength)).distinct
+    val deactivated = oldInterfaces.filterNot(newInterfaces.toSet).map(Event.Deactivated(_, _, _))
+    val activated = newInterfaces.filterNot(oldInterfaces.toSet).map(Event.Activated(_, _, _))
+    deactivated ++ activated
+
 /**
  * Definitions associated with network topologies.
  */
