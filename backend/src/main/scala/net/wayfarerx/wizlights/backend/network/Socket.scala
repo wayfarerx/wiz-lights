@@ -19,7 +19,6 @@ package backend
 package network
 
 import java.net.{InetAddress, InetSocketAddress}
-import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 import io.circe.parser.parse as parseJson
@@ -31,7 +30,7 @@ import io.netty.channel.*
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
 
-import zio.{Chunk, Hub, RIO, Scope, UIO, ZIO}
+import zio.{Chunk, Hub, Promise, RIO, Scope, UIO, ZIO}
 import zio.stream.ZStream
 
 import protocol.{Request, Response}
@@ -81,58 +80,48 @@ private[network] object Socket:
    * @return A new network socket.
    */
   def make(port: Int, eventLoopGroup: EventLoopGroup, received: Hub[Incoming]): RIO[Scope, Socket] =
-    val handler = Handler()
     for
-      _ <- handler.stream.mapZIO(read).collectSome.foreach(received.publish).forkScoped
-      channel <- ZIO.acquireRelease(
-        ZIO.attemptBlocking(
-          Bootstrap()
-            .group(eventLoopGroup)
-            .channel(classOf[NioDatagramChannel])
-            .option[java.lang.Boolean](ChannelOption.SO_BROADCAST, true)
-            .option[java.lang.Boolean](ChannelOption.SO_REUSEADDR, true)
-            .handler(handler)
-            .bind(port)
-            .sync()
-            .channel()
-        )
-      )(channel => ZIO.attemptBlocking(channel.close.await).ignore)
+      bound <- Promise.make[Throwable, Channel]
+      _ <- ZStream.asyncScoped[Any, Throwable, Incoming] { emit =>
+        ZIO.acquireRelease(
+          ZIO.attemptBlocking(
+            Bootstrap()
+              .group(eventLoopGroup)
+              .channel(classOf[NioDatagramChannel])
+              .option[java.lang.Boolean](ChannelOption.SO_BROADCAST, true)
+              .option[java.lang.Boolean](ChannelOption.SO_REUSEADDR, true)
+              .handler(Handler(emit))
+              .bind(port)
+              .sync()
+              .channel()
+          )
+        )(channel => ZIO.attemptBlocking(channel.close.await).ignore).flatMap(bound.succeed).tapErrorCause(bound.failCause)
+      }.foreach(received.publish).forkScoped
+      channel <- bound.await
     yield Socket(port, channel)
 
   /**
-   * Reads a message from the channel.
+   * Reads a message from the text of a received packet.
    *
-   * @param event The address and payload of the received packet.
+   * @param address The address of the device that sent the packet.
+   * @param text    The text of the received packet.
    * @return A new message if one can be read.
    */
-  private[network] def read(event: (InetAddress, ByteBuffer)): UIO[Option[Incoming]] = {
-    val (address, payload) = event
+  private[network] def read(address: InetAddress, text: String): UIO[Option[Incoming]] = {
     for
-      text <- ZIO.attempt(StandardCharsets.UTF_8.decode(payload).toString)
       json <- ZIO.fromEither(parseJson(text))
       response <- ZIO.fromEither(json.as[Response])
     yield Some(Incoming(address, response))
   }.catchAllCause(ZIO.logInfoCause(s"Failed to read an incoming message.", _).map(_ => None))
 
   /**
-   * An inbound UDP packet handler that can target an optional live discovery service.
+   * An inbound UDP packet handler that emits the messages it reads to a stream.
+   *
+   * @param emit The callback that emits received messages to the stream.
    */
-  private[network] final class Handler extends SimpleChannelInboundHandler[DatagramPacket]:
+  private[network] final class Handler(emit: ZIO[Any, Option[Throwable], Chunk[Incoming]] => Unit)
+    extends SimpleChannelInboundHandler[DatagramPacket]:
 
-    /** The callback to emit to the stream. */
-    @volatile private var callback: Option[ZStream.Emit[Any, Throwable, (InetAddress, ByteBuffer), Unit]] = None
-
-    /** The stream of packets received by this handler. */
-    lazy val stream: ZStream[Any, Throwable, (InetAddress, ByteBuffer)] = ZStream.async(emit => callback = Some(emit))
-
-    /* Forward the datagram to the registered callback. */
-    override def channelRead0(context: ChannelHandlerContext, packet: DatagramPacket): Unit = callback.foreach {
-      val buffer = ByteBuffer.allocate(packet.content.readableBytes)
-      packet.content.readBytes(buffer)
-      buffer.flip()
-      _(ZIO.succeed(Chunk(packet.sender.getAddress -> buffer)))
-    }
-
-    /* Forward the closure to the registered callback. */
-    override def channelInactive(context: ChannelHandlerContext): Unit =
-      callback.foreach(_(ZIO.fail(None)))
+    /* Read the datagram and emit the resulting message. */
+    override def channelRead0(context: ChannelHandlerContext, packet: DatagramPacket): Unit =
+      emit(read(packet.sender.getAddress, packet.content.toString(StandardCharsets.UTF_8)).map(Chunk.fromIterable))
