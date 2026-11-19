@@ -29,11 +29,11 @@ import java.nio.ByteBuffer
  * @param prefixLength     The subnet prefix length in the range 0 - 32 (e.g., 24 for a /24 subnet).
  * @param broadcastAddress The optional broadcast address of this interface.
  */
-private[network] case class Interface private(
+private[network] case class Interface(
   macAddress: String,
   ipAddress: InetAddress,
   prefixLength: Int,
-  broadcastAddress: Option[InetAddress] = None
+  broadcastAddress: Option[InetAddress]
 ):
 
   /** The integer representation of the IPv4 address of this interface. */

@@ -21,7 +21,7 @@ package network
 import java.net.{InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
-import io.circe.parser.parse as parseJson
+import io.circe.parser.decode
 import io.circe.syntax.*
 
 import io.netty.bootstrap.Bootstrap
@@ -51,13 +51,10 @@ private[network] final class Socket(port: Int, channel: Channel):
    */
   def apply(addresses: Iterable[InetAddress], request: Request): UIO[Unit] =
     ZIO.suspendSucceed {
-      val datagram = request.asJson.noSpaces
+      val datagram = request.asJson.noSpaces.getBytes(StandardCharsets.UTF_8)
       ZIO.foreachDiscard(addresses) { address =>
         ZIO.async[Any, Throwable, Unit] { cb =>
-          val packet = DatagramPacket(
-            Unpooled.copiedBuffer(datagram, StandardCharsets.UTF_8),
-            InetSocketAddress(address, port)
-          )
+          val packet = DatagramPacket(Unpooled.wrappedBuffer(datagram), InetSocketAddress(address, port))
           channel.writeAndFlush(packet).addListener { (future: ChannelFuture) =>
             if future.isSuccess then cb(ZIO.unit)
             else cb(ZIO.fail(future.cause))
@@ -107,19 +104,17 @@ private[network] object Socket:
    * @param text    The text of the received packet.
    * @return A new message if one can be read.
    */
-  private[network] def read(address: InetAddress, text: String): UIO[Option[Incoming]] = {
-    for
-      json <- ZIO.fromEither(parseJson(text))
-      response <- ZIO.fromEither(json.as[Response])
-    yield Some(Incoming(address, response))
-  }.catchAllCause(ZIO.logInfoCause(s"Failed to read an incoming message.", _).map(_ => None))
+  def read(address: InetAddress, text: String): UIO[Option[Incoming]] =
+    ZIO.fromEither(decode[Response](text)).map(response => Some(Incoming(address, response))).catchAllCause {
+      ZIO.logInfoCause("Failed to read an incoming message.", _).map(_ => None)
+    }
 
   /**
    * An inbound UDP packet handler that emits the messages it reads to a stream.
    *
    * @param emit The callback that emits received messages to the stream.
    */
-  private[network] final class Handler(emit: ZIO[Any, Option[Throwable], Chunk[Incoming]] => Unit)
+  final class Handler(emit: ZIO[Any, Option[Throwable], Chunk[Incoming]] => Unit)
     extends SimpleChannelInboundHandler[DatagramPacket]:
 
     /* Read the datagram and emit the resulting message. */

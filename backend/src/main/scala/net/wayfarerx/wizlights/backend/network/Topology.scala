@@ -19,6 +19,7 @@ package backend
 package network
 
 import java.net.{InetAddress, NetworkInterface, SocketException}
+import java.nio.ByteBuffer
 import java.util.HexFormat
 
 import scala.jdk.CollectionConverters.*
@@ -30,7 +31,7 @@ import zio.{IO, UIO, ZIO}
  *
  * @param interfaces The active network interfaces.
  */
-private[network] case class Topology private(interfaces: List[Interface]):
+private[network] case class Topology(interfaces: List[Interface]):
 
   /** The available broadcast addresses, or the default broadcast addresses if none are discovered. */
   private lazy val broadcastAddresses: Set[InetAddress] =
@@ -39,25 +40,17 @@ private[network] case class Topology private(interfaces: List[Interface]):
       case addresses => addresses.toSet
 
   /**
-   * The IPv4 interfaces indexed by subnet, as pairs of subnet mask and network address to interface, ordered from the
-   * longest prefix to the shortest. Within a subnet the first interface in list order is retained.
-   */
-  private lazy val subnets: Vector[(Int, Map[Int, Interface])] =
-    interfaces.foldRight(Map.empty[Int, Map[Int, Interface]]) { (interface, result) =>
-      val networks = result.getOrElse(interface.prefixLength, Map.empty)
-      val network = interface.ipv4Address & subnetMaskFor(interface.prefixLength)
-      result.updated(interface.prefixLength, networks.updated(network, interface))
-    }.toVector.sortBy(-_._1).map((prefixLength, networks) => subnetMaskFor(prefixLength) -> networks)
-
-  /**
-   * Returns the local network interface for communicating with the specified target if available.
+   * Returns the local network interface for communicating with the specified target if available, preferring the
+   * interface with the longest matching subnet prefix and then the first such interface in list order.
    *
    * @param target The destination address of the target device.
    * @return The local network interface for communicating with the target if available.
    */
   def interfaceFor(target: InetAddress): Option[Interface] =
-    ipv4Address(target).flatMap { ipv4Address =>
-      subnets.iterator.flatMap((mask, networks) => networks.get(ipv4Address & mask)).nextOption()
+    Topology.ipv4Address(target).flatMap { address =>
+      interfaces.filter { interface =>
+        ((address ^ interface.ipv4Address) & Topology.subnetMaskFor(interface.prefixLength)) == 0
+      }.maxByOption(_.prefixLength)
     }
 
   /**
@@ -94,6 +87,25 @@ private[network] object Topology:
 
   /** An empty topology. */
   val Empty: Topology = Topology(Nil)
+
+  /**
+   * Returns the subnet mask for the specified prefix length.
+   *
+   * @param prefixLength The subnet prefix length in the range 0 - 32.
+   * @return The subnet mask for the prefix length.
+   */
+  private def subnetMaskFor(prefixLength: Int): Int =
+    (-1L << (32 - prefixLength)).toInt
+
+  /**
+   * Converts an internet address to an integer if it is an IPv4 address.
+   *
+   * @param address The internet address to convert.
+   * @return The integer representation of the address if it is an IPv4 address.
+   */
+  private def ipv4Address(address: InetAddress): Option[Int] =
+    val bytes = address.getAddress
+    Option.when(bytes.length == 4)(ByteBuffer.wrap(bytes).getInt)
 
   /** Discovers the local network topology. */
   def discover(): IO[SocketException, Topology] =

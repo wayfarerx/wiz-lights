@@ -139,20 +139,13 @@ object NetworkLive:
       socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
       topologyRef <- SubscriptionRef.make[Topology](Topology.Empty)
-      _ <- refreshTopology(topologyRef)
-      _ <- (ZIO.sleep(refreshTopologyInterval) *> refreshTopology(topologyRef)).forever.forkScoped
+      refreshTopology = Topology.discover().flatMap(topologyRef.set).catchAllCause {
+        ZIO.logWarningCause("Failed to discover the local network topology.", _)
+      }
+      _ <- refreshTopology
+      _ <- (ZIO.sleep(refreshTopologyInterval) *> refreshTopology).forever.forkScoped
       _ <- ZStream.fromQueue(outgoingQueue).foreach { message =>
         topologyRef.get.flatMap(topology => socket(topology.destinations(message), message.request))
       }.forkScoped
     yield NetworkLive(topologyRef, outgoingQueue, incomingHub)
-
-  /**
-   * Refreshes the cached network topology.
-   *
-   * @param topologyRef The reference to the current network topology.
-   */
-  private[network] def refreshTopology(topologyRef: SubscriptionRef[Topology]): UIO[Unit] =
-    Topology.discover().flatMap(topologyRef.set).catchAllCause {
-      ZIO.logWarningCause("Failed to discover the local network topology.", _)
-    }
 
