@@ -25,7 +25,7 @@ import scala.concurrent.duration.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.MultiThreadIoEventLoopGroup
 
-import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Schedule, Scope, UIO, URIO, ZIO, ZLayer}
+import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Scope, UIO, URIO, ZIO, ZLayer}
 import zio.stream.{UStream, ZStream}
 
 /**
@@ -72,7 +72,7 @@ trait Network:
  * @param eventHub      The hub of topology change events.
  */
 final class NetworkLive private[network](
-  topologyRef: Ref.Synchronized[Topology],
+  topologyRef: Ref[Topology],
   outgoingQueue: Queue[Outgoing],
   incomingHub: Hub[Incoming],
   eventHub: Hub[Event]
@@ -144,14 +144,13 @@ object NetworkLive:
       outgoingQueue <- Queue.sliding[Outgoing](outgoingWindow)
       incomingHub <- Hub.sliding[Incoming](incomingWindow)
       eventHub <- Hub.sliding[Event](eventWindow)
-      commandSocket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
-      listenerSocket <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
-      topologyRef <- Ref.Synchronized.make[Topology](Topology.Empty)
+      socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
+      _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
+      topologyRef <- Ref.make[Topology](Topology.Empty)
       _ <- refreshTopology(topologyRef, eventHub)
-      _ <- refreshTopology(topologyRef, eventHub)
-        .repeat(Schedule.spaced(refreshTopologyInterval)).delay(refreshTopologyInterval).forkScoped
+      _ <- (ZIO.sleep(refreshTopologyInterval) *> refreshTopology(topologyRef, eventHub)).forever.forkScoped
       _ <- ZStream.fromQueue(outgoingQueue).foreach { message =>
-        topologyRef.get.flatMap(topology => commandSocket(topology.destinations(message), message.request))
+        topologyRef.get.flatMap(topology => socket(topology.destinations(message), message.request))
       }.forkScoped
     yield NetworkLive(topologyRef, outgoingQueue, incomingHub, eventHub)
 
@@ -161,15 +160,8 @@ object NetworkLive:
    * @param topologyRef The reference to the current network topology.
    * @param eventHub    The hub of topology change events.
    */
-  private[network] def refreshTopology(topologyRef: Ref.Synchronized[Topology], eventHub: Hub[Event]): UIO[Unit] =
-    for
-      newTopology <- Topology.discover().map(Some(_)).catchAllCause {
-        ZIO.logWarningCause(s"Failed to discover the local network topology.", _).map(_ => None)
-      }
-      _ <- newTopology.fold(ZIO.unit) { newTopology =>
-        topologyRef.modifyZIO { oldTopology =>
-          eventHub.publishAll(oldTopology.diff(newTopology)).map(_ -> newTopology)
-        }
-      }
-    yield ()
+  private[network] def refreshTopology(topologyRef: Ref[Topology], eventHub: Hub[Event]): UIO[Unit] =
+    Topology.discover().flatMap { newTopology =>
+      topologyRef.getAndSet(newTopology).flatMap(oldTopology => eventHub.publishAll(oldTopology.diff(newTopology)))
+    }.unit.catchAllCause(ZIO.logWarningCause("Failed to discover the local network topology.", _))
 
