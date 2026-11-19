@@ -23,9 +23,9 @@ import java.net.InetAddress
 import scala.concurrent.duration.*
 
 import io.netty.channel.nio.NioIoHandler
-import io.netty.channel.{EventLoopGroup, MultiThreadIoEventLoopGroup}
+import io.netty.channel.MultiThreadIoEventLoopGroup
 
-import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Schedule, Scope, Task, UIO, URIO, ZIO, ZLayer}
+import zio.{Duration, Hub, Queue, RIO, RLayer, Ref, Schedule, Scope, UIO, URIO, ZIO, ZLayer}
 import zio.stream.{UStream, ZStream}
 
 /**
@@ -138,7 +138,9 @@ object NetworkLive:
   ): RIO[Scope, Network] =
     val refreshTopologyInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
     for
-      eventLoopGroup <- ZIO.acquireRelease(acquireEventLoopGroup)(releaseEventLoopGroup)
+      eventLoopGroup <- ZIO.acquireRelease {
+        ZIO.attemptBlocking(MultiThreadIoEventLoopGroup(NioIoHandler.newFactory))
+      }(group => ZIO.attemptBlocking(group.close()).ignore)
       outgoingQueue <- Queue.sliding[Outgoing](outgoingWindow)
       incomingHub <- Hub.sliding[Incoming](incomingWindow)
       eventHub <- Hub.sliding[Event](eventWindow)
@@ -148,24 +150,10 @@ object NetworkLive:
       _ <- refreshTopology(topologyRef, eventHub)
       _ <- refreshTopology(topologyRef, eventHub)
         .repeat(Schedule.spaced(refreshTopologyInterval)).delay(refreshTopologyInterval).forkScoped
-      _ <- ZStream.fromQueue(outgoingQueue).foreach(write(topologyRef, commandSocket, _)).forkScoped
+      _ <- ZStream.fromQueue(outgoingQueue).foreach { message =>
+        topologyRef.get.flatMap(topology => commandSocket(topology.destinations(message), message.request))
+      }.forkScoped
     yield NetworkLive(topologyRef, outgoingQueue, incomingHub, eventHub)
-
-  /**
-   * Acquires an event loop group.
-   *
-   * @return The acquired event loop group.
-   */
-  private[network] def acquireEventLoopGroup: Task[EventLoopGroup] =
-    ZIO.attemptBlocking(MultiThreadIoEventLoopGroup(NioIoHandler.newFactory))
-
-  /**
-   * Releases an event loop group.
-   *
-   * @param group The event loop group to release.
-   */
-  private[network] def releaseEventLoopGroup(group: EventLoopGroup): UIO[Unit] =
-    ZIO.attemptBlocking(group.close()).ignore
 
   /**
    * Refreshes the cached network topology.
@@ -184,14 +172,4 @@ object NetworkLive:
         }
       }
     yield ()
-
-  /**
-   * Writes a message to the specified socket.
-   *
-   * @param topologyRef The live network topology.
-   * @param socket      The socket to write to.
-   * @param message     The message to write to the socket.
-   */
-  private[network] def write(topologyRef: Ref.Synchronized[Topology], socket: Socket, message: Outgoing): UIO[Unit] =
-    topologyRef.get.flatMap(t => socket(t.destinations(message), message.request))
 

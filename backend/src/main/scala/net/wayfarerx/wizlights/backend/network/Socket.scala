@@ -29,7 +29,7 @@ import io.netty.buffer.Unpooled
 import io.netty.channel.*
 import io.netty.channel.socket.DatagramPacket
 import io.netty.channel.socket.nio.NioDatagramChannel
-import zio.{Chunk, Hub, RIO, Scope, Task, UIO, ZIO}
+import zio.{Chunk, Hub, RIO, Scope, UIO, ZIO}
 import zio.stream.ZStream
 import protocol.{Request, Response}
 
@@ -39,7 +39,7 @@ import protocol.{Request, Response}
  * @param port    The network port to connect to.
  * @param channel The active network channel.
  */
-private[network] final class Socket private[network](port: Int, channel: Channel):
+private[network] final class Socket(port: Int, channel: Channel):
 
   /**
    * Sends a request to the specified addresses.
@@ -81,38 +81,20 @@ private[network] object Socket:
     val handler = Handler()
     for
       _ <- handler.stream.mapZIO(read).collectSome.foreach(received.publish).forkScoped
-      channel <- ZIO.acquireRelease(acquireChannel(port, eventLoopGroup, handler))(releaseChannel)
+      channel <- ZIO.acquireRelease(
+        ZIO.attemptBlocking(
+          Bootstrap()
+            .group(eventLoopGroup)
+            .channel(classOf[NioDatagramChannel])
+            .option[java.lang.Boolean](ChannelOption.SO_BROADCAST, true)
+            .option[java.lang.Boolean](ChannelOption.SO_REUSEADDR, true)
+            .handler(handler)
+            .bind(port)
+            .sync()
+            .channel()
+        )
+      )(channel => ZIO.attemptBlocking(channel.close.await).ignore)
     yield Socket(port, channel)
-
-  /**
-   * Acquires a channel using the specified port, event loop group, and handler.
-   *
-   * @param port           The port number to bind to.
-   * @param eventLoopGroup The event loop group to build from.
-   * @param handler        The handler to dispatch to.
-   * @return A channel using the specified handler.
-   */
-  private[network] def acquireChannel(port: Int, eventLoopGroup: EventLoopGroup, handler: Handler): Task[Channel] =
-    ZIO.attemptBlocking(
-      Bootstrap()
-        .group(eventLoopGroup)
-        .channel(classOf[NioDatagramChannel])
-        .option[java.lang.Boolean](ChannelOption.SO_BROADCAST, true)
-        .option[java.lang.Boolean](ChannelOption.SO_REUSEADDR, true)
-        .handler(handler)
-        .bind(port)
-        .sync()
-        .channel()
-    )
-
-  /**
-   * Releases a previously acquired channel.
-   *
-   * @param channel The channel to release.
-   * @return An effect that releases the channel.
-   */
-  private[network] def releaseChannel(channel: Channel): UIO[Unit] =
-    ZIO.attemptBlocking(channel.close.await).ignore
 
   /**
    * Reads a message from the channel.
@@ -127,7 +109,7 @@ private[network] object Socket:
       json <- ZIO.fromEither(parseJson(text))
       response <- ZIO.fromEither(json.as[Response])
     yield Some(Incoming(address, response))
-  }.catchAllCause(ZIO.logInfoCause(_).map(_ => None))
+  }.catchAllCause(ZIO.logInfoCause(s"Failed to read an incoming message.", _).map(_ => None))
 
   /**
    * An inbound UDP packet handler that can target an optional live discovery service.
