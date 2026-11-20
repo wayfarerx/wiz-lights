@@ -139,7 +139,7 @@ object NetworkLive:
       socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
       topologyRef <- SubscriptionRef.make[Topology](Topology.Empty)
-      refreshTopology = Topology.discover().flatMap(topologyRef.set).catchAllCause {
+      refreshTopology = Topology.discover.flatMap(topologyRef.set).catchAllCause {
         ZIO.logWarningCause("Failed to discover the local network topology.", _)
       }
       _ <- refreshTopology

@@ -79,7 +79,7 @@ private[network] object Socket:
   def make(port: Int, eventLoopGroup: EventLoopGroup, received: Hub[Incoming]): RIO[Scope, Socket] =
     for
       bound <- Promise.make[Throwable, Channel]
-      _ <- ZStream.asyncScoped[Any, Throwable, Incoming] { emit =>
+      incoming = ZStream.asyncScoped[Any, Throwable, Incoming] { emit =>
         ZIO.acquireRelease(
           ZIO.attemptBlocking(
             Bootstrap()
@@ -92,8 +92,11 @@ private[network] object Socket:
               .sync()
               .channel()
           )
-        )(channel => ZIO.attemptBlocking(channel.close.await).ignore).flatMap(bound.succeed).tapErrorCause(bound.failCause)
-      }.foreach(received.publish).forkScoped
+        )(channel => ZIO.attemptBlocking(channel.close.await).ignore)
+          .flatMap(bound.succeed)
+          .tapErrorCause(bound.failCause)
+      }
+      _ <- incoming.foreach(received.publish).forkScoped
       channel <- bound.await
     yield Socket(port, channel)
 

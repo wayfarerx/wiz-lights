@@ -108,7 +108,7 @@ private[network] object Topology:
     Option.when(bytes.length == 4)(ByteBuffer.wrap(bytes).getInt)
 
   /** Discovers the local network topology. */
-  def discover(): IO[SocketException, Topology] =
+  def discover: IO[SocketException, Topology] =
     for
       interfaces <- ZIO.attemptBlocking(NetworkInterface.getNetworkInterfaces.asScala.toSeq)
         .refineToOrDie[SocketException]
