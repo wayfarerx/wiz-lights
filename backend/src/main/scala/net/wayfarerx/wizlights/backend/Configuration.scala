@@ -26,22 +26,22 @@ import zio.{Task, ZIO}
 /**
  * The configuration properties for the backend.
  *
- * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
  * @param incomingWindow    The number of incoming responses to keep in the network hub.
  * @param commandPort       The network port to send commands on.
  * @param listenerPort      The network port to also listen on.
  * @param discoveryInterval The frequency of broadcast discovery attempts.
+ * @param refreshInterval   The frequency of local network topology refreshes.
  * @param registrationTtl   The duration after which a bulb registration is refreshed.
  * @param purgeTimeout      The timeout for devices that do not respond.
  * @param retryBackoffs     The durations to wait between retrying outgoing messages.
  * @param knownDevices      The known device addresses for discovering lights across subnets.
  */
 case class Configuration private(
-  outgoingWindow: Int,
   incomingWindow: Int,
   commandPort: Int,
   listenerPort: Int,
   discoveryInterval: FiniteDuration,
+  refreshInterval: FiniteDuration,
   registrationTtl: FiniteDuration,
   purgeTimeout: FiniteDuration,
   retryBackoffs: List[FiniteDuration],
@@ -52,9 +52,6 @@ case class Configuration private(
  * Factory for backend configurations.
  */
 object Configuration:
-
-  /** The default number of outgoing requests to keep in the network queue. */
-  val DefaultOutgoingWindow: Int = 64
 
   /** The default number of incoming responses to keep in the network hub. */
   val DefaultIncomingWindow: Int = 512
@@ -67,6 +64,9 @@ object Configuration:
 
   /** The default frequency of broadcast discovery attempts. */
   val DefaultDiscoveryInterval: FiniteDuration = 25.seconds
+
+  /** The default frequency of local network topology refreshes. */
+  val DefaultRefreshInterval: FiniteDuration = 40.seconds
 
   /** The default duration after which a bulb registration is refreshed. */
   val DefaultRegistrationTtl: FiniteDuration = 5.minutes
@@ -83,11 +83,11 @@ object Configuration:
   /**
    * Creates a new backend configuration.
    *
-   * @param outgoingWindow    The number of outgoing requests to keep in the network queue.
    * @param incomingWindow    The number of incoming responses to keep in the network hub.
    * @param commandPort       The network port to send commands on.
    * @param listenerPort      The network port to listen on.
    * @param discoveryInterval The frequency of broadcast discovery attempts.
+   * @param refreshInterval   The frequency of local network topology refreshes.
    * @param purgeTimeout      The timeout for devices that do not respond.
    * @param retryBackoffs     The durations to wait between retrying outgoing messages.
    * @param registrationTtl   The duration after which a bulb registration is refreshed.
@@ -95,11 +95,11 @@ object Configuration:
    * @return A new backend configuration.
    */
   def make(
-    outgoingWindow: Int = DefaultOutgoingWindow,
     incomingWindow: Int = DefaultIncomingWindow,
     commandPort: Int = DefaultCommandPort,
     listenerPort: Int = DefaultListenerPort,
     discoveryInterval: FiniteDuration = DefaultDiscoveryInterval,
+    refreshInterval: FiniteDuration = DefaultRefreshInterval,
     registrationTtl: FiniteDuration = DefaultRegistrationTtl,
     purgeTimeout: FiniteDuration = DefaultPurgeTimeout,
     retryBackoffs: Iterable[FiniteDuration] = DefaultRetryBackoffs,
@@ -108,15 +108,16 @@ object Configuration:
     validNetworkPort(commandPort) validate
       validNetworkPort(listenerPort) validate
       validDiscoveryInterval(discoveryInterval) validate
+      validRefreshInterval(refreshInterval) validate
       validRegistrationTtl(registrationTtl)  validate
       validPurgeTimeout(purgeTimeout) validate
       validRetryBackoffs(retryBackoffs)map { _ =>
       Configuration(
-        outgoingWindow,
         incomingWindow,
         commandPort,
         listenerPort,
         discoveryInterval,
+        refreshInterval,
         registrationTtl,
         purgeTimeout,
         retryBackoffs.toList,
@@ -141,6 +142,15 @@ object Configuration:
   private def validDiscoveryInterval(discoveryInterval: FiniteDuration): Task[Unit] =
     if discoveryInterval > Duration.Zero then ZIO.unit else
       ZIO.fail(IllegalArgumentException(s"Invalid discovery interval: $discoveryInterval."))
+
+  /**
+   * Validates that the refresh interval is a positive duration.
+   *
+   * @param refreshInterval The refresh interval to validate.
+   */
+  private def validRefreshInterval(refreshInterval: FiniteDuration): Task[Unit] =
+    if refreshInterval > Duration.Zero then ZIO.unit else
+      ZIO.fail(IllegalArgumentException(s"Invalid refresh interval: $refreshInterval."))
 
   /**
    * Validates that the registration TTL is a positive duration.

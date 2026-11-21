@@ -25,7 +25,7 @@ import scala.concurrent.duration.*
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.MultiThreadIoEventLoopGroup
 
-import zio.{Duration, Hub, Queue, RIO, RLayer, Scope, UIO, URIO, ZIO, ZLayer}
+import zio.{Duration, Hub, RIO, RLayer, Scope, UIO, URIO, ZIO, ZLayer}
 import zio.stream.{SubscriptionRef, UStream, ZStream}
 
 /**
@@ -61,13 +61,13 @@ trait Network:
 /**
  * The live implementation of the network service.
  *
- * @param topologyRef   The cached local network topology.
- * @param outgoingQueue The queue of outgoing messages.
- * @param incomingHub   The hub of incoming messages.
+ * @param topologyRef The cached local network topology.
+ * @param socket      The socket to send outgoing messages from.
+ * @param incomingHub The hub of incoming messages.
  */
 final class NetworkLive private[network](
   topologyRef: SubscriptionRef[Topology],
-  outgoingQueue: Queue[Outgoing],
+  socket: Socket,
   incomingHub: Hub[Incoming]
 ) extends Network:
 
@@ -84,7 +84,7 @@ final class NetworkLive private[network](
 
   /* Publish a command message on the command port. */
   override def publish(message: Outgoing): UIO[Unit] =
-    outgoingQueue.offer(message).ignore
+    topologyRef.get.flatMap(topology => socket(topology.destinations(message), message.request))
 
   /* Subscribe to responses received across all response ports. */
   override def subscribe: URIO[Scope, UStream[Incoming]] =
@@ -95,19 +95,15 @@ final class NetworkLive private[network](
  */
 object NetworkLive:
 
-  /** The golden ratio for staggering broadcast address refreshes. */
-  private[network] val GoldenRatio = (1.0 + Math.sqrt(5.0)) / 2.0
-
   /** The layer that provides the default network service. */
   val layer: RLayer[Configuration, Network] = ZLayer.scoped {
     for
       config <- ZIO.service[Configuration]
       network <- make(
-        config.outgoingWindow,
         config.incomingWindow,
         config.commandPort,
         config.listenerPort,
-        config.discoveryInterval
+        config.refreshInterval
       )
     yield network
   }
@@ -115,26 +111,23 @@ object NetworkLive:
   /**
    * Creates a live network representation.
    *
-   * @param outgoingWindow     The number of outgoing requests to keep in the network queue.
    * @param incomingWindow     The number of incoming responses to keep in the network hub.
    * @param commandPort        The network port to send commands on.
    * @param listenerPort       The network port to also listen on.
-   * @param discoveryInterval  The interval to wait between discovering devices.
+   * @param refreshInterval    The interval to wait between refreshing the local network topology.
    * @return A live network representation.
    */
   def make(
-    outgoingWindow: Int,
     incomingWindow: Int,
     commandPort: Int,
     listenerPort: Int,
-    discoveryInterval: FiniteDuration
-  ): RIO[Scope, Network] =
-    val refreshTopologyInterval = Duration.fromScala(discoveryInterval * GoldenRatio)
+    refreshInterval: FiniteDuration
+  ): RIO[Scope, Network] = {
+    val refreshSleep = Duration.fromScala(refreshInterval)
     for
       eventLoopGroup <- ZIO.acquireRelease {
         ZIO.attemptBlocking(MultiThreadIoEventLoopGroup(NioIoHandler.newFactory))
       }(group => ZIO.attemptBlocking(group.close()).ignore)
-      outgoingQueue <- Queue.sliding[Outgoing](outgoingWindow)
       incomingHub <- Hub.sliding[Incoming](incomingWindow)
       socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
@@ -143,9 +136,7 @@ object NetworkLive:
         ZIO.logWarningCause("Failed to discover the local network topology.", _)
       }
       _ <- refreshTopology
-      _ <- (ZIO.sleep(refreshTopologyInterval) *> refreshTopology).forever.forkScoped
-      _ <- ZStream.fromQueue(outgoingQueue).foreach { message =>
-        topologyRef.get.flatMap(topology => socket(topology.destinations(message), message.request))
-      }.forkScoped
-    yield NetworkLive(topologyRef, outgoingQueue, incomingHub)
+      _ <- (ZIO.sleep(refreshSleep) *> refreshTopology).forever.forkScoped
+    yield NetworkLive(topologyRef, socket, incomingHub)
+  }
 

@@ -71,8 +71,8 @@ private[network] case class Topology(interfaces: List[Interface]):
    * @return The events that describe the changes to the interfaces between this and the newer network topology.
    */
   def diff(newTopology: Topology): List[Event] =
-    val oldInterfaces = interfaces.map(i => (i.macAddress, i.ipAddress, i.prefixLength)).distinct
-    val newInterfaces = newTopology.interfaces.map(i => (i.macAddress, i.ipAddress, i.prefixLength)).distinct
+    val oldInterfaces = interfaces.map(_.key).distinct
+    val newInterfaces = newTopology.interfaces.map(_.key).distinct
     val deactivated = oldInterfaces.filterNot(newInterfaces.toSet).map(Event.Deactivated(_, _, _))
     val activated = newInterfaces.filterNot(oldInterfaces.toSet).map(Event.Activated(_, _, _))
     deactivated ++ activated
@@ -116,7 +116,8 @@ private[network] object Topology:
     yield result
 
   /**
-   * Creates a network topology from the specified network interfaces.
+   * Creates a network topology from the IPv4 addresses of the specified network interfaces, with their prefix lengths
+   * clamped to the range 0 - 32.
    *
    * @param networkInterfaces The network interfaces to inspect.
    * @return The constructed network topology.
@@ -126,7 +127,14 @@ private[network] object Topology:
       interfaces <- ZIO.foldLeft(networkInterfaces)(Vector.empty[Interface]) { (interfaces, interface) =>
         for macAddress <- getMacIfUpAndNotLoopback(interface) yield
           macAddress.fold(interfaces) { macAddress =>
-            interfaces ++ interface.getInterfaceAddresses.asScala.toVector.flatMap(Interface.from(macAddress, _))
+            interfaces ++ interface.getInterfaceAddresses.asScala.toVector.flatMap { interfaceAddress =>
+              for
+                ipAddress <- Option(interfaceAddress.getAddress)
+                ipv4 <- ipv4Address(ipAddress)
+              yield
+                val prefixLength = Math.max(0, Math.min(32, interfaceAddress.getNetworkPrefixLength.toInt))
+                Interface(macAddress, ipAddress, ipv4, prefixLength, Option(interfaceAddress.getBroadcast))
+            }
           }
       }
     yield Topology(interfaces.toList)
