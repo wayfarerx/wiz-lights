@@ -13,6 +13,9 @@ lazy val CirceParser = "io.circe" %% "circe-parser" % circeVersion
 lazy val nettyVersion = "4.2.7.Final"
 lazy val NettyAll = "io.netty" % "netty-all" % nettyVersion
 
+lazy val mockitoVersion = "5.24.0"
+lazy val MockitoCore = "org.mockito" % "mockito-core" % mockitoVersion % Test
+
 lazy val zioVersion = "2.1.24"
 lazy val Zio = "dev.zio" %% "zio" % zioVersion
 lazy val ZioStreams = "dev.zio" %% "zio-streams" % zioVersion
@@ -68,7 +71,8 @@ lazy val backend = (project in file("backend"))
       ZioPrelude,
       ZioTest,
       ZioTestSbt,
-      ZioTestMagnolia
+      ZioTestMagnolia,
+      MockitoCore
     ),
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
