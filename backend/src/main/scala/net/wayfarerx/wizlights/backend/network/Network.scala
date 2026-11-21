@@ -122,7 +122,7 @@ object NetworkLive:
     commandPort: Int,
     listenerPort: Int,
     refreshInterval: FiniteDuration
-  ): RIO[Scope, Network] = {
+  ): RIO[Scope, Network] =
     val refreshSleep = Duration.fromScala(refreshInterval)
     for
       eventLoopGroup <- ZIO.acquireRelease {
@@ -132,11 +132,17 @@ object NetworkLive:
       socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
       topologyRef <- SubscriptionRef.make[Topology](Topology.Empty)
-      refreshTopology = Topology.discover.flatMap(topologyRef.set).catchAllCause {
-        ZIO.logWarningCause("Failed to discover the local network topology.", _)
-      }
-      _ <- refreshTopology
-      _ <- (ZIO.sleep(refreshSleep) *> refreshTopology).forever.forkScoped
+      _ <- refreshTopology(topologyRef)
+      _ <- (ZIO.sleep(refreshSleep) *> refreshTopology(topologyRef)).forever.forkScoped
     yield NetworkLive(topologyRef, socket, incomingHub)
-  }
+
+  /**
+   * Refreshest the local network topology.
+   *
+   * @param topologyRef The reference to the current local topology.
+   */
+  private def refreshTopology(topologyRef: SubscriptionRef[Topology]): UIO[Unit] =
+    Topology.discover.flatMap(topologyRef.set).catchAllCause {
+      ZIO.logWarningCause("Failed to discover the local network topology.", _)
+    }
 
