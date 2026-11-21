@@ -18,14 +18,14 @@ package net.wayfarerx.wizlights
 package backend
 package network
 
-import java.net.InetAddress
+import java.net.{InetAddress, SocketException}
 
 import scala.concurrent.duration.*
 
 import io.netty.channel.nio.NioIoHandler
 import io.netty.channel.MultiThreadIoEventLoopGroup
 
-import zio.{Duration, Hub, RIO, RLayer, Scope, UIO, URIO, ZIO, ZLayer}
+import zio.{Duration, Hub, IO, RIO, RLayer, Scope, UIO, URIO, ZIO, ZLayer}
 import zio.stream.{SubscriptionRef, UStream, ZStream}
 
 /**
@@ -115,13 +115,15 @@ object NetworkLive:
    * @param commandPort        The network port to send commands on.
    * @param listenerPort       The network port to also listen on.
    * @param refreshInterval    The interval to wait between refreshing the local network topology.
+   * @param discover           The effect that discovers the local network topology.
    * @return A live network representation.
    */
   def make(
     incomingWindow: Int,
     commandPort: Int,
     listenerPort: Int,
-    refreshInterval: FiniteDuration
+    refreshInterval: FiniteDuration,
+    discover: IO[SocketException, Topology] = Topology.discover
   ): RIO[Scope, Network] =
     val refreshSleep = Duration.fromScala(refreshInterval)
     for
@@ -132,17 +134,21 @@ object NetworkLive:
       socket <- Socket.make(commandPort, eventLoopGroup, incomingHub)
       _ <- Socket.make(listenerPort, eventLoopGroup, incomingHub)
       topologyRef <- SubscriptionRef.make[Topology](Topology.Empty)
-      _ <- refreshTopology(topologyRef)
-      _ <- (ZIO.sleep(refreshSleep) *> refreshTopology(topologyRef)).forever.forkScoped
+      _ <- refreshTopology(topologyRef, discover)
+      _ <- (ZIO.sleep(refreshSleep) *> refreshTopology(topologyRef, discover)).forever.forkScoped
     yield NetworkLive(topologyRef, socket, incomingHub)
 
   /**
    * Refreshest the local network topology.
    *
    * @param topologyRef The reference to the current local topology.
+   * @param discover    The effect that discovers the local network topology.
    */
-  private def refreshTopology(topologyRef: SubscriptionRef[Topology]): UIO[Unit] =
-    Topology.discover.flatMap(topologyRef.set).catchAllCause {
+  private def refreshTopology(
+    topologyRef: SubscriptionRef[Topology],
+    discover: IO[SocketException, Topology]
+  ): UIO[Unit] =
+    discover.flatMap(topologyRef.set).catchAllCause {
       ZIO.logWarningCause("Failed to discover the local network topology.", _)
     }
 
